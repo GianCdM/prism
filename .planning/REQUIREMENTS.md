@@ -147,95 +147,95 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SETUP-01 | Pending | Pending |
-| SETUP-02 | Pending | Pending |
-| SETUP-03 | Pending | Pending |
-| SETUP-04 | Pending | Pending |
-| SETUP-05 | Pending | Pending |
-| SETUP-06 | Pending | Pending |
-| SETUP-07 | Pending | Pending |
-| SETUP-08 | Pending | Pending |
-| SETUP-09 | Pending | Pending |
-| SETUP-10 | Pending | Pending |
-| SETUP-11 | Pending | Pending |
-| SETUP-12 | Pending | Pending |
-| SETUP-13 | Pending | Pending |
-| SETUP-14 | Pending | Pending |
-| OBS-01 | Pending | Pending |
-| OBS-02 | Pending | Pending |
-| OBS-03 | Pending | Pending |
-| OBS-04 | Pending | Pending |
-| OBS-05 | Pending | Pending |
-| OBS-06 | Pending | Pending |
-| OBS-07 | Pending | Pending |
-| OBS-08 | Pending | Pending |
-| EXT-01 | Pending | Pending |
-| EXT-02 | Pending | Pending |
-| EXT-03 | Pending | Pending |
-| EXT-04 | Pending | Pending |
-| EXT-05 | Pending | Pending |
-| EXT-06 | Pending | Pending |
-| EXT-07 | Pending | Pending |
-| EXT-08 | Pending | Pending |
-| EXT-09 | Pending | Pending |
-| EXT-10 | Pending | Pending |
-| EXT-11 | Pending | Pending |
-| EXT-12 | Pending | Pending |
-| ENG-01 | Pending | Pending |
-| ENG-02 | Pending | Pending |
-| ENG-03 | Pending | Pending |
-| ENG-04 | Pending | Pending |
-| ENG-05 | Pending | Pending |
-| ENG-06 | Pending | Pending |
-| ENG-07 | Pending | Pending |
-| ENG-08 | Pending | Pending |
-| ENG-09 | Pending | Pending |
-| ENG-10 | Pending | Pending |
-| ENG-11 | Pending | Pending |
-| ENG-12 | Pending | Pending |
-| CTX-01 | Pending | Pending |
-| CTX-02 | Pending | Pending |
-| CTX-03 | Pending | Pending |
-| CTX-04 | Pending | Pending |
-| CTX-05 | Pending | Pending |
-| CTX-06 | Pending | Pending |
-| CTX-07 | Pending | Pending |
-| CTX-08 | Pending | Pending |
-| CTX-09 | Pending | Pending |
-| BRG-01 | Pending | Pending |
-| BRG-02 | Pending | Pending |
-| BRG-03 | Pending | Pending |
-| BRG-04 | Pending | Pending |
-| SKILL-01 | Pending | Pending |
-| SKILL-02 | Pending | Pending |
-| SKILL-03 | Pending | Pending |
-| SKILL-04 | Pending | Pending |
-| SKILL-05 | Pending | Pending |
-| SKILL-06 | Pending | Pending |
-| SKILL-07 | Pending | Pending |
-| SKILL-08 | Pending | Pending |
-| SKILL-09 | Pending | Pending |
-| SKILL-10 | Pending | Pending |
-| SKILL-11 | Pending | Pending |
-| SKILL-12 | Pending | Pending |
-| REG-01 | Pending | Pending |
-| REG-02 | Pending | Pending |
-| REG-03 | Pending | Pending |
-| REG-04 | Pending | Pending |
-| REG-05 | Pending | Pending |
-| REG-06 | Pending | Pending |
-| REG-07 | Pending | Pending |
-| REG-08 | Pending | Pending |
-| REG-09 | Pending | Pending |
-| REG-10 | Pending | Pending |
-| REG-11 | Pending | Pending |
-| REG-12 | Pending | Pending |
+| SETUP-01 | Phase 1 | Pending |
+| SETUP-02 | Phase 1 | Pending |
+| SETUP-03 | Phase 1 | Pending |
+| SETUP-04 | Phase 1 | Pending |
+| SETUP-05 | Phase 1 | Pending |
+| SETUP-06 | Phase 1 | Pending |
+| SETUP-07 | Phase 1 | Pending |
+| SETUP-08 | Phase 1 | Pending |
+| SETUP-09 | Phase 1 | Pending |
+| SETUP-10 | Phase 1 | Pending |
+| SETUP-11 | Phase 1 | Pending |
+| SETUP-12 | Phase 1 | Pending |
+| SETUP-13 | Phase 1 | Pending |
+| SETUP-14 | Phase 1 | Pending |
+| OBS-01 | Phase 1 | Pending |
+| OBS-02 | Phase 1 | Pending |
+| OBS-03 | Phase 1 | Pending |
+| OBS-04 | Phase 1 | Pending |
+| OBS-05 | Phase 1 | Pending |
+| OBS-06 | Phase 1 | Pending |
+| OBS-07 | Phase 1 | Pending |
+| OBS-08 | Phase 1 | Pending |
+| EXT-01 | Phase 2 | Pending |
+| EXT-02 | Phase 2 | Pending |
+| EXT-03 | Phase 2 | Pending |
+| EXT-04 | Phase 2 | Pending |
+| EXT-05 | Phase 2 | Pending |
+| EXT-06 | Phase 2 | Pending |
+| EXT-07 | Phase 2 | Pending |
+| EXT-08 | Phase 2 | Pending |
+| EXT-09 | Phase 2 | Pending |
+| EXT-10 | Phase 2 | Pending |
+| EXT-11 | Phase 2 | Pending |
+| EXT-12 | Phase 2 | Pending |
+| ENG-01 | Phase 2 | Pending |
+| ENG-02 | Phase 2 | Pending |
+| ENG-03 | Phase 2 | Pending |
+| ENG-04 | Phase 2 | Pending |
+| ENG-05 | Phase 2 | Pending |
+| ENG-06 | Phase 2 | Pending |
+| ENG-07 | Phase 2 | Pending |
+| ENG-08 | Phase 2 | Pending |
+| ENG-09 | Phase 2 | Pending |
+| ENG-10 | Phase 2 | Pending |
+| ENG-11 | Phase 2 | Pending |
+| ENG-12 | Phase 2 | Pending |
+| CTX-01 | Phase 2 | Pending |
+| CTX-02 | Phase 2 | Pending |
+| CTX-03 | Phase 2 | Pending |
+| CTX-04 | Phase 2 | Pending |
+| CTX-05 | Phase 2 | Pending |
+| CTX-06 | Phase 2 | Pending |
+| CTX-07 | Phase 2 | Pending |
+| CTX-08 | Phase 2 | Pending |
+| CTX-09 | Phase 2 | Pending |
+| BRG-01 | Phase 3 | Pending |
+| BRG-02 | Phase 3 | Pending |
+| BRG-03 | Phase 3 | Pending |
+| BRG-04 | Phase 3 | Pending |
+| SKILL-01 | Phase 3 | Pending |
+| SKILL-02 | Phase 3 | Pending |
+| SKILL-03 | Phase 3 | Pending |
+| SKILL-04 | Phase 3 | Pending |
+| SKILL-05 | Phase 3 | Pending |
+| SKILL-06 | Phase 3 | Pending |
+| SKILL-07 | Phase 3 | Pending |
+| SKILL-08 | Phase 3 | Pending |
+| SKILL-09 | Phase 3 | Pending |
+| SKILL-10 | Phase 3 | Pending |
+| SKILL-11 | Phase 3 | Pending |
+| SKILL-12 | Phase 3 | Pending |
+| REG-01 | Phase 4 | Pending |
+| REG-02 | Phase 4 | Pending |
+| REG-03 | Phase 4 | Pending |
+| REG-04 | Phase 4 | Pending |
+| REG-05 | Phase 4 | Pending |
+| REG-06 | Phase 4 | Pending |
+| REG-07 | Phase 4 | Pending |
+| REG-08 | Phase 4 | Pending |
+| REG-09 | Phase 4 | Pending |
+| REG-10 | Phase 4 | Pending |
+| REG-11 | Phase 4 | Pending |
+| REG-12 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 64 total
-- Mapped to phases: 0
-- Unmapped: 64 (pending roadmap)
+- v1 requirements: 83 total
+- Mapped to phases: 83
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 after initial definition*
+*Last updated: 2026-04-14 after roadmap creation (traceability updated)*
