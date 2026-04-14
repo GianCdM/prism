@@ -99,14 +99,14 @@
 
 ### Registry
 
-- [ ] **REG-01**: `prism registry create` — interactive flow: create GitHub repo from template, deploy Cloudflare Worker, generate API tokens, configure local Prism
+- [x] **REG-01**: `prism registry create` — interactive flow: create GitHub repo from template, deploy Cloudflare Worker, generate API tokens, configure local Prism
 - [x] **REG-02**: `prism registry add NAME --url URL [--token T] [--read-only]` — add registry to config
 - [x] **REG-03**: `prism registry remove NAME` — remove registry from config
 - [x] **REG-04**: `prism registry list` — show configured registries
 - [x] **REG-05**: `prism registry default NAME` — set default push target
 - [x] **REG-06**: `prism registry token create NAME` — generate new API token
 - [x] **REG-07**: `prism registry token revoke NAME TOKEN` — revoke an API token
-- [ ] **REG-08**: Registry template bundled in tool repo (Worker source, CI workflows, validation schema, build scripts)
+- [x] **REG-08**: Registry template bundled in tool repo (Worker source, CI workflows, validation schema, build scripts)
 - [ ] **REG-09**: Multi-registry reads: merge `skill-registry.json` from all sources, cache locally with 24h TTL
 - [ ] **REG-10**: Multi-registry writes: publish delta only (tracked via `.published.json` with content hashes per registry)
 - [ ] **REG-11**: Query results tagged with source registry (e.g., `[team]`, `[community]`)
@@ -218,14 +218,14 @@
 | SKILL-10 | Phase 3 | Complete |
 | SKILL-11 | Phase 3 | Complete |
 | SKILL-12 | Phase 3 | Complete |
-| REG-01 | Phase 4 | Pending |
+| REG-01 | Phase 4 | Complete |
 | REG-02 | Phase 4 | Complete |
 | REG-03 | Phase 4 | Complete |
 | REG-04 | Phase 4 | Complete |
 | REG-05 | Phase 4 | Complete |
 | REG-06 | Phase 4 | Complete |
 | REG-07 | Phase 4 | Complete |
-| REG-08 | Phase 4 | Pending |
+| REG-08 | Phase 4 | Complete |
 | REG-09 | Phase 4 | Pending |
 | REG-10 | Phase 4 | Pending |
 | REG-11 | Phase 4 | Pending |

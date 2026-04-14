@@ -82,7 +82,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Registry config layer: lib/registry.py CRUD, CLI subcommand group, token management
-- [ ] 04-02-PLAN.md — Registry template bundle: Cloudflare Worker, CI workflows, scripts, schema, install.sh update
+- [x] 04-02-PLAN.md — Registry template bundle: Cloudflare Worker, CI workflows, scripts, schema, install.sh update
 - [ ] 04-03-PLAN.md — Multi-registry reads/writes: fetch+cache+merge, create wizard, slash command updates
 
 ## Progress
