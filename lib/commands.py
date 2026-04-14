@@ -467,73 +467,165 @@ def cmd_procedures(project_id: Optional[str] = None) -> None:
         print()
 
 
-def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False) -> None:
-    """Show recent observations, extraction history, or session insights."""
-    if extractions:
-        log_path = PRISM_HOME / "validation-log.jsonl"
-        if not log_path.exists():
-            print("No extraction history found.")
-            return
-        print("Recent extractions:")
-        lines = log_path.read_text().strip().split("\n")
-        for line in lines[-last_n:]:
-            try:
-                entry = json.loads(line)
-                ts = entry.get("timestamp", "?")[:19]
-                candidate = entry.get("candidate", "?")
-                decision = entry.get("decision", "?")
-                print(f"  [{ts}] {decision}: {candidate}")
-            except json.JSONDecodeError:
-                continue
-    elif insights:
-        project_id = detect_project_id()
-        obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
-        # Also check archived observations
-        archive_dir = PRISM_HOME / "projects" / project_id / "observations.archive"
-        all_insights = []
-        for path in _collect_observation_files(obs_path, archive_dir):
-            try:
-                with open(path) as f:
-                    for line in f:
-                        try:
-                            entry = json.loads(line)
-                            if entry.get("event") == "session_insight":
-                                all_insights.append(entry)
-                        except json.JSONDecodeError:
-                            continue
-            except OSError:
-                continue
-        if not all_insights:
-            print("No session insights found. Run 'prism review --session <id>' to generate.")
-            return
-        print(f"Session insights ({len(all_insights)} total):\n")
-        for entry in all_insights[-last_n:]:
-            ts = entry.get("timestamp", "?")[:10]
-            kind = entry.get("insight_type", "unknown")
-            summary = entry.get("input_summary", "")
-            evidence = entry.get("evidence", "")
-            print(f"  [{kind}] {summary}")
-            if evidence:
-                print(f"    evidence: {evidence[:120]}")
-            print()
+def cmd_config(key=None, value=None) -> None:
+    """Get or set configuration values.
+
+    No args: show all config as formatted output (D-11).
+    One arg: show value for that key.
+    Two args: set key to value (auto-parses numbers and bools).
+
+    Supports dotted keys for nested access: extraction.threshold -> extract_threshold (D-10).
+    """
+    from .config import get_config, save_config
+
+    config = get_config()
+
+    if key is None:
+        # Show all config with friendly formatting (D-11)
+        print("\033[1mPrism Configuration\033[0m")
+        print()
+        for k, v in sorted(config.items()):
+            if isinstance(v, list):
+                print("  {}: [{} patterns]".format(k, len(v)))
+            else:
+                print("  {}: {}".format(k, v))
+        print()
+        print("Set a value: prism config <key> <value>")
+        return
+
+    # Normalize dotted key: extraction.threshold -> extract_threshold
+    normalized_key = key.replace(".", "_")
+    if normalized_key not in config and key in config:
+        normalized_key = key
+
+    if value is None:
+        # Get single key
+        if normalized_key in config:
+            print("{}: {}".format(normalized_key, config[normalized_key]))
+        else:
+            print("\033[33mUnknown config key: {}\033[0m".format(key))
+            print("Available keys: {}".format(", ".join(sorted(config.keys()))))
+        return
+
+    # Set value (try to parse as number/bool)
+    if value.lower() in ("true", "false"):
+        config[normalized_key] = value.lower() == "true"
     else:
-        project_id = detect_project_id()
-        obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
-        if not obs_path.exists():
-            print("No observations found.")
-            return
-        print(f"Recent observations (last {last_n}):")
-        lines = obs_path.read_text().strip().split("\n")
-        for line in lines[-last_n:]:
-            try:
-                entry = json.loads(line)
-                ts = entry.get("timestamp", "?")[:19]
-                tool = entry.get("tool", "?")
-                event = entry.get("event", "?")
-                summary = entry.get("input_summary", "")[:60]
-                print(f"  [{ts}] {event}: {tool} - {summary}")
-            except json.JSONDecodeError:
-                continue
+        try:
+            config[normalized_key] = float(value)
+            if config[normalized_key] == int(config[normalized_key]):
+                config[normalized_key] = int(config[normalized_key])
+        except ValueError:
+            config[normalized_key] = value
+
+    save_config(config)
+    print("\033[32mSet {} = {}\033[0m".format(normalized_key, config[normalized_key]))
+
+
+def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
+            json_output: bool = False) -> None:
+    """Show recent observations, extraction history, or session insights.
+
+    Default: human-readable table with timestamp, event, tool, summary (D-12).
+    --json: raw JSONL output for piping/scripting.
+    """
+    if extractions:
+        _log_extractions(last_n)
+        return
+    if insights:
+        _log_insights(last_n)
+        return
+
+    project_id = detect_project_id()
+    obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
+    if not obs_path.exists():
+        if json_output:
+            return  # No output in JSON mode
+        print("No observations yet. Start using Claude Code tools -- they'll be captured automatically.")
+        return
+
+    lines = obs_path.read_text().strip().split("\n")
+    recent = lines[-last_n:]
+
+    if json_output:
+        # Raw JSONL output (D-12 --json flag)
+        for line in recent:
+            print(line)
+        return
+
+    # Human-readable formatted table (D-12 default)
+    print("\033[1mRecent observations\033[0m (last {} of {})".format(
+        min(last_n, len(recent)), len(lines)))
+    print()
+    print("  {:<20} {:<12} {:<15} Summary".format("Timestamp", "Event", "Tool"))
+    print("  {} {} {} {}".format(
+        "\u2500" * 20, "\u2500" * 12, "\u2500" * 15, "\u2500" * 40))
+
+    for line in recent:
+        try:
+            entry = json.loads(line)
+            ts = entry.get("timestamp", "?")[:19]
+            event = entry.get("event", "?")
+            tool = entry.get("tool", "?")
+            summary = entry.get("input_summary", "")[:50]
+            print("  {:<20} {:<12} {:<15} {}".format(ts, event, tool, summary))
+        except json.JSONDecodeError:
+            continue
+
+    print()
+    print("  Use --json for raw JSONL output, --insights for session review findings.")
+
+
+def _log_extractions(last_n: int) -> None:
+    """Show recent extraction history."""
+    log_path = PRISM_HOME / "validation-log.jsonl"
+    if not log_path.exists():
+        print("No extraction history found.")
+        return
+    print("Recent extractions:")
+    lines = log_path.read_text().strip().split("\n")
+    for line in lines[-last_n:]:
+        try:
+            entry = json.loads(line)
+            ts = entry.get("timestamp", "?")[:19]
+            candidate = entry.get("candidate", "?")
+            decision = entry.get("decision", "?")
+            print("  [{}] {}: {}".format(ts, decision, candidate))
+        except json.JSONDecodeError:
+            continue
+
+
+def _log_insights(last_n: int) -> None:
+    """Show session review insights."""
+    project_id = detect_project_id()
+    obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
+    archive_dir = PRISM_HOME / "projects" / project_id / "observations.archive"
+    all_insights = []
+    for path in _collect_observation_files(obs_path, archive_dir):
+        try:
+            with open(path) as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("event") == "session_insight":
+                            all_insights.append(entry)
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            continue
+    if not all_insights:
+        print("No session insights found. Run 'prism review --session <id>' to generate.")
+        return
+    print("Session insights ({} total):\n".format(len(all_insights)))
+    for entry in all_insights[-last_n:]:
+        ts = entry.get("timestamp", "?")[:10]
+        kind = entry.get("insight_type", "unknown")
+        summary = entry.get("input_summary", "")
+        evidence = entry.get("evidence", "")
+        print("  [{}] {}".format(kind, summary))
+        if evidence:
+            print("    evidence: {}".format(evidence[:120]))
+        print()
 
 
 def _collect_observation_files(current: Path, archive_dir: Path) -> list:

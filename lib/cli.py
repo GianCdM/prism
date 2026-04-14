@@ -29,7 +29,6 @@ def main() -> None:
 
     # sync
     p_sync = subparsers.add_parser("sync", help="Generate IDE context files")
-    p_sync.add_argument("--claude", action="store_true", help="Generate .claude/prism.md")
     p_sync.add_argument("--project", help="Override project ID")
     p_sync.add_argument("--output-dir", help="Override output directory")
 
@@ -60,6 +59,8 @@ def main() -> None:
     p_log.add_argument("--last", type=int, default=20, help="Number of entries")
     p_log.add_argument("--extractions", action="store_true", help="Show extraction history")
     p_log.add_argument("--insights", action="store_true", help="Show session review insights only")
+    p_log.add_argument("--json", action="store_true", dest="json_output",
+                       help="Output raw JSONL")
 
     # analyze-sessions
     p_sessions = subparsers.add_parser("analyze-sessions",
@@ -99,10 +100,9 @@ def main() -> None:
         from .project import detect_project_id
         project_id = args.project or detect_project_id()
         results = run_extraction(project_id)
-        print(f"\nResults: {results['extracted']} extracted, "
-              f"{results['approved']} approved, "
-              f"{results['rejected']} rejected, "
-              f"{results['modified']} modified")
+        print("\nResults: {} extracted, {} approved, {} rejected, {} modified".format(
+            results['extracted'], results['approved'],
+            results['rejected'], results['modified']))
 
     elif args.command == "review":
         from .review import run_review
@@ -110,9 +110,10 @@ def main() -> None:
         project_id = args.project or detect_project_id()
         results = run_review(args.session, project_id)
         if results.get("insights", 0) > 0:
-            print(f"Review complete: {results['insights']} insights captured")
+            print("Review complete: {} insights captured".format(results['insights']))
         else:
-            print(f"Review complete: no new insights (status: {results.get('status', 'unknown')})")
+            print("Review complete: no new insights (status: {})".format(
+                results.get('status', 'unknown')))
 
     elif args.command == "sync":
         from .project import detect_project_id
@@ -142,13 +143,15 @@ def main() -> None:
 
     elif args.command == "log":
         from .commands import cmd_log
-        cmd_log(last_n=args.last, extractions=args.extractions, insights=args.insights)
+        cmd_log(last_n=args.last, extractions=args.extractions,
+                insights=args.insights, json_output=args.json_output)
 
     elif args.command == "analyze-sessions":
         _cmd_analyze_sessions(args)
 
     elif args.command == "config":
-        _cmd_config(args.key, args.value)
+        from .commands import cmd_config
+        cmd_config(args.key, args.value)
 
     else:
         parser.print_help()
@@ -180,18 +183,18 @@ def _cmd_analyze_sessions(args) -> None:
             print("No sessions found.")
             return
         # Group by project
-        by_project: dict[str, list] = {}
+        by_project = {}
         for s in sessions:
             by_project.setdefault(s["project_id"], []).append(s)
         for pid, sess_list in sorted(by_project.items()):
             name = __import__("os").path.basename(sess_list[0]["cwd"].rstrip("/")) if sess_list[0]["cwd"] else pid
             total_size = sum(s["size"] for s in sess_list)
-            print(f"{name} ({pid}): {len(sess_list)} sessions, {total_size / 1024:.0f} KB")
+            print("{} ({}): {} sessions, {:.0f} KB".format(name, pid, len(sess_list), total_size / 1024))
         return
 
     mode = "Dry run" if args.dry_run else "Analyzing"
-    scope = "all projects" if args.all_projects else f"project {project_id}"
-    print(f"{mode}: {scope}\n")
+    scope = "all projects" if args.all_projects else "project {}".format(project_id)
+    print("{}: {}\n".format(mode, scope))
 
     results = analyze_all_sessions(
         project_filter=project_id,
@@ -199,13 +202,12 @@ def _cmd_analyze_sessions(args) -> None:
         dry_run=args.dry_run,
     )
 
-    print(f"\nSummary:")
-    print(f"  Sessions: {results['processed']} processed, {results['skipped']} skipped")
-    print(f"  Observations: {results['total_observations']} total")
+    print("\nSummary:")
+    print("  Sessions: {} processed, {} skipped".format(results['processed'], results['skipped']))
+    print("  Observations: {} total".format(results['total_observations']))
     for pid, info in results["by_project"].items():
-        obs_path = f"~/.prism/projects/{pid}/observations.jsonl"
-        print(f"    {info['name']} ({pid}): {info['sessions']} sessions, "
-              f"{info['observations']} observations")
+        print("    {} ({}): {} sessions, {} observations".format(
+            info['name'], pid, info['sessions'], info['observations']))
 
     if not args.dry_run and results["total_observations"] > 0:
         if args.extract:
@@ -213,46 +215,11 @@ def _cmd_analyze_sessions(args) -> None:
             from .extract import run_extraction
             for pid in results["by_project"]:
                 extract_results = run_extraction(pid)
-                print(f"  {pid}: {extract_results['extracted']} extracted, "
-                      f"{extract_results['approved']} approved, "
-                      f"{extract_results['rejected']} rejected")
+                print("  {}: {} extracted, {} approved, {} rejected".format(
+                    pid, extract_results['extracted'],
+                    extract_results['approved'], extract_results['rejected']))
         else:
             print("\nRun 'prism extract' to process these into knowledge entries.")
-
-
-def _cmd_config(key: "str | None", value: "str | None") -> None:
-    """Get or set configuration values."""
-    from .config import get_config, save_config
-
-    config = get_config()
-
-    if key is None:
-        # Show all config
-        import json
-        print(json.dumps(config, indent=2))
-        return
-
-    if value is None:
-        # Get single key
-        if key in config:
-            print(f"{key}: {config[key]}")
-        else:
-            print(f"Unknown config key: {key}")
-        return
-
-    # Set value (try to parse as number/bool)
-    if value.lower() in ("true", "false"):
-        config[key] = value.lower() == "true"
-    else:
-        try:
-            config[key] = float(value)
-            if config[key] == int(config[key]):
-                config[key] = int(config[key])
-        except ValueError:
-            config[key] = value
-
-    save_config(config)
-    print(f"Set {key} = {config[key]}")
 
 
 if __name__ == "__main__":
