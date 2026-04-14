@@ -62,11 +62,12 @@ Plans:
   1. User can run `prism promote <id>` to convert a high-confidence engram (>=0.7, evidence >=3) into `plugin.json` + `SKILL.md` skill format, with promotion working fully offline
   2. All 12 slash commands from Lens are available in any initialized project: analysis pipelines (`/run-analysis-pipeline`, `/run-history-pipeline`, `/analyze-agent-codebase`), extraction (`/extract-skills`, `/mine-history`, `/mine-design`, `/synthesize`, `/synthesize-decisions`), curation (`/curate-skills`), and publishing/querying (`/publish-skills`, `/advise-skills`, `/audit-code`)
   3. `/publish-skills` publishes only changed skills (delta tracking via `.published.json`) and supports targeting a specific registry
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Promotion bridge: lib/bridge.py cmd_promote, CLI wiring, config update, schema + install.sh skills copy
+- [ ] 03-02-PLAN.md — Tier 1 + Tier 2 slash commands: 9 commands copied/adapted from Lens (analysis, extraction, mining, curation)
+- [ ] 03-03-PLAN.md — Tier 3 slash commands: unified /publish-skills with delta tracking, /advise-skills and /audit-code for Prism config
 
 ### Phase 4: Registry
 **Goal**: Teams can create, configure, and manage shared skill registries backed by GitHub repos and Cloudflare Workers, with full multi-registry support for reading, writing, and querying across organizational boundaries
@@ -92,5 +93,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Foundation + Observation | 3/3 | Complete | 2026-04-14 |
 | 2. Personal Knowledge Loop | 0/5 | Planning complete | - |
-| 3. Bridge + Slash Commands | 0/2 | Not started | - |
+| 3. Bridge + Slash Commands | 0/3 | Planning complete | - |
 | 4. Registry | 0/2 | Not started | - |
