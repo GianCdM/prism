@@ -1,4 +1,4 @@
-"""User-facing prism commands: learn, forget, correct, status, maintain, procedures."""
+"""User-facing prism commands: init, config, log, status, learn, forget, correct, maintain, procedures."""
 
 import json
 import os
@@ -23,21 +23,26 @@ from .project import detect_project_id, detect_project_name
 def cmd_init() -> None:
     """Initialize prism for the current project.
 
-    Creates ~/.prism/ structure, then writes project-scoped hook configs:
-      - .claude/settings.local.json (Claude Code hooks)
+    Creates ~/.prism/ structure, configures hooks + MCP in settings.local.json,
+    symlinks skills, updates .gitignore, generates initial .claude/prism.md.
+    Idempotent -- safe to re-run.
     """
     from .config import init_prism_home
+    from .project import detect_project_remote
+    from .sync import sync_claude_code
+
     init_prism_home()
     project_id = detect_project_id()
+    project_name = detect_project_name()
+
     if project_id != "global":
         ensure_dirs(project_id)
-        # Write project.json
+        # Write project.json if not exists
         project_dir = PRISM_HOME / "projects" / project_id
         project_json = project_dir / "project.json"
         if not project_json.exists():
-            from .project import detect_project_remote
             info = {
-                "name": detect_project_name(),
+                "name": project_name,
                 "root": os.getcwd(),
                 "remote": detect_project_remote(),
                 "project_id": project_id,
@@ -45,56 +50,40 @@ def cmd_init() -> None:
             }
             project_json.write_text(json.dumps(info, indent=2) + "\n")
 
-    # Write hook configs and register MCP server
-    _setup_claude_code_hooks()
-    _setup_mcp_server(project_id)
+    # Configure hooks and MCP server in .claude/settings.local.json
+    _setup_hooks_and_mcp(project_id)
 
-    print(f"\nPrism initialized at {PRISM_HOME}")
-    print(f"Project: {detect_project_name()} ({project_id})")
-    print(f"Hooks:  project ({Path.cwd().name})")
-    print(f"MCP:    knowledge server registered")
+    # Symlink slash commands from ~/.prism/skills/ to .claude/skills/
+    skills_count = _setup_slash_commands()
+
+    # Update .gitignore with Prism-generated entries
+    _update_gitignore()
+
+    # Generate initial .claude/prism.md context file
+    sync_claude_code(project_id)
+
+    # Print concise summary (D-06, D-11)
+    print(f"\n\033[32mPrism initialized for {project_name} ({project_id})\033[0m")
     print()
-
-    print("You're set. Start coding - observations will accumulate automatically.")
-    print("Then run:")
-    print("  prism extract    # analyze observations into knowledge")
-    print("  prism sync       # generate IDE context files")
-
-
-CLAUDE_CODE_HOOKS = {
-    "PreToolUse": [
-        {
-            "matcher": "*",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": str(PRISM_HOME / "hooks" / "capture.sh") + " pre",
-                }
-            ],
-        }
-    ],
-    "PostToolUse": [
-        {
-            "matcher": "*",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": str(PRISM_HOME / "hooks" / "capture.sh") + " post",
-                    "async": True,
-                }
-            ],
-        }
-    ],
-}
+    print(f"  Hooks:   .claude/settings.local.json (PreToolUse + PostToolUse)")
+    print(f"  MCP:     prism knowledge server registered")
+    print(f"  Context: .claude/prism.md generated")
+    if skills_count > 0:
+        print(f"  Skills:  {skills_count} slash commands linked")
+    print()
+    print("Start coding -- observations accumulate automatically.")
+    print("Run \033[1mprism extract\033[0m after ~15 observations to generate engrams.")
 
 
-def _setup_claude_code_hooks() -> None:
-    """Write Claude Code hook config to project settings.local.json."""
+def _setup_hooks_and_mcp(project_id: str) -> None:
+    """Configure Claude Code hooks and MCP server in .claude/settings.local.json.
+
+    Carefully merges with existing config -- never clobbers other tools' entries (D-05).
+    """
     settings_path = Path.cwd() / ".claude" / "settings.local.json"
-
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Merge with existing settings (don't clobber other config)
+    # Read existing settings (T-01-07: handle corrupt JSON gracefully)
     existing = {}
     if settings_path.exists():
         try:
@@ -102,62 +91,93 @@ def _setup_claude_code_hooks() -> None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    existing_hooks = existing.get("hooks", {})
+    # --- Hooks ---
+    hooks = existing.get("hooks", {})
+    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
 
-    # Merge our hooks with existing ones (don't duplicate)
-    for event, hook_list in CLAUDE_CODE_HOOKS.items():
-        if event not in existing_hooks:
-            existing_hooks[event] = hook_list
+    for event, phase_arg, is_async in [
+        ("PreToolUse", "pre", False),
+        ("PostToolUse", "post", True),
+    ]:
+        hook_entry = {
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": "{} {}".format(capture_cmd, phase_arg),
+            }],
+        }
+        if is_async:
+            hook_entry["hooks"][0]["async"] = True
+
+        if event not in hooks:
+            hooks[event] = [hook_entry]
         else:
-            # Check if our hook is already there
-            existing_commands = set()
-            for matcher_group in existing_hooks[event]:
+            # Check for existing Prism hook -- don't duplicate
+            existing_cmds = set()
+            for matcher_group in hooks[event]:
                 for h in matcher_group.get("hooks", []):
-                    existing_commands.add(h.get("command", ""))
-            our_command = hook_list[0]["hooks"][0]["command"]
-            if our_command not in existing_commands:
-                existing_hooks[event].extend(hook_list)
+                    existing_cmds.add(h.get("command", ""))
+            if hook_entry["hooks"][0]["command"] not in existing_cmds:
+                hooks[event].append(hook_entry)
 
-    existing["hooks"] = existing_hooks
-    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
-    print(f"  Claude Code hooks: {settings_path}")
+    existing["hooks"] = hooks
 
-
-def _setup_mcp_server(project_id: str) -> None:
-    """Register the prism MCP server in Claude Code settings."""
-    import sys
-
-    settings_path = Path.cwd() / ".claude" / "settings.local.json"
-
-    # The settings file should already exist from hook setup
-    existing = {}
-    if settings_path.exists():
-        try:
-            existing = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-
+    # --- MCP Server ---
     mcp_servers = existing.get("mcpServers", {})
-
-    # Find the MCP server script
-    mcp_script = PRISM_HOME / "lib" / "mcp_server.py"
-    if not mcp_script.exists():
-        # Fallback to repo location
-        mcp_script = Path(__file__).parent / "mcp_server.py"
-
-    # Build env for MCP server
-    mcp_env = {"PRISM_PROJECT": project_id}
-
     mcp_servers["prism"] = {
-        "command": sys.executable,
-        "args": [str(mcp_script)],
-        "env": mcp_env,
+        "command": "python3",
+        "args": [str(PRISM_HOME / "lib" / "mcp_server.py")],
+        "env": {"PRISM_PROJECT": project_id},
     }
-
     existing["mcpServers"] = mcp_servers
 
     settings_path.write_text(json.dumps(existing, indent=2) + "\n")
-    print(f"  MCP server:       {settings_path}")
+
+
+def _setup_slash_commands() -> int:
+    """Symlink Prism skills to .claude/skills/. Returns count installed."""
+    skills_src = PRISM_HOME / "skills"
+    if not skills_src.exists() or not any(skills_src.iterdir()):
+        return 0
+
+    skills_dest = Path.cwd() / ".claude" / "skills"
+    skills_dest.mkdir(parents=True, exist_ok=True)
+
+    installed = 0
+    for skill_dir in skills_src.iterdir():
+        if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+            dest = skills_dest / skill_dir.name
+            if dest.is_symlink() or dest.exists():
+                if dest.is_symlink():
+                    dest.unlink()
+                else:
+                    shutil.rmtree(str(dest))
+            dest.symlink_to(skill_dir)
+            installed += 1
+    return installed
+
+
+def _update_gitignore() -> None:
+    """Add Prism-generated files to .gitignore (T-01-10: duplicate check + comment block)."""
+    gitignore_path = Path.cwd() / ".gitignore"
+    entries = [
+        ".claude/settings.local.json",
+        ".claude/prism.md",
+        ".claude/skills/",
+    ]
+
+    existing_lines = set()
+    if gitignore_path.exists():
+        existing_lines = set(gitignore_path.read_text().splitlines())
+
+    to_add = [e for e in entries if e not in existing_lines]
+    if to_add:
+        with open(gitignore_path, "a") as f:
+            if existing_lines and gitignore_path.read_text() and not gitignore_path.read_text().endswith("\n"):
+                f.write("\n")
+            f.write("# Prism (auto-generated, machine-specific)\n")
+            for entry in to_add:
+                f.write(entry + "\n")
 
 
 def cmd_status(project_id: Optional[str] = None) -> None:
