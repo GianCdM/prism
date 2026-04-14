@@ -200,10 +200,16 @@ def test_extraction_trigger():
                     with patch.object(capture, "_spawn_background") as mock_spawn:
                         capture.main()
 
-        # After adding 15th observation, trigger should fire
-        mock_spawn.assert_called_once()
-        call_args = mock_spawn.call_args
-        assert "extract" in call_args[0][1], "Should spawn extraction"
+        # After adding 15th observation, extraction trigger should fire
+        # (review trigger may also fire since 15 % 5 == 0)
+        assert mock_spawn.call_count >= 1, "Should have triggered at least once"
+        # Find the extraction call
+        extract_called = False
+        for call in mock_spawn.call_args_list:
+            if "extract" in call[0][1]:
+                extract_called = True
+                break
+        assert extract_called, "Should spawn extraction"
 
 
 if __name__ == "__main__":
