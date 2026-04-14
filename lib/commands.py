@@ -181,70 +181,73 @@ def _update_gitignore() -> None:
 
 
 def cmd_status(project_id: Optional[str] = None) -> None:
-    """Show active knowledge entries and project info."""
+    """Show active knowledge entries and project info.
+
+    Per D-06: Global and project engrams merge into one list, each tagged [global] or [project].
+    """
     if not project_id:
         project_id = detect_project_id()
 
     project_name = detect_project_name()
     entries = list_entries(project_id=project_id)
 
-    global_entries = [e for e in entries if e.get("scope") == "global"]
-    project_entries = [e for e in entries if e.get("scope") == "project"]
-
     # Check context file
     claude_ctx = Path.cwd() / ".claude" / "prism.md"
 
-    print(f"Project: {project_name} ({project_id})")
+    print(f"\033[1mPrism Status: {project_name}\033[0m ({project_id})")
     print()
 
     if claude_ctx.exists():
         line_count = len(claude_ctx.read_text().split("\n"))
-        print(f"Claude Code context: .claude/prism.md ({line_count} lines)")
+        print(f"  Context: .claude/prism.md ({line_count} lines)")
     else:
-        print("Claude Code context: not generated (run 'prism sync --claude')")
+        print("  Context: not generated (run 'prism sync')")
 
+    # Unified display with scope tags (D-06)
     print()
+    if entries:
+        print(f"\033[1mKnowledge\033[0m ({len(entries)} entries):")
+        print()
+        for e in sorted(entries, key=lambda x: -x.get("confidence", 0)):
+            scope_tag = "[global]" if e.get("scope") == "global" else "[project]"
+            kind = e.get("kind", "preference")
+            conf = e.get("confidence", 0)
+            trigger = e.get("trigger", "").strip('"')
+            domain = e.get("domain", "general")
 
-    if global_entries:
-        print(f"Always ({len(global_entries)} global):")
-        for e in sorted(global_entries, key=lambda x: -x.get("confidence", 0)):
-            source = ""
-            if "team" in e.get("tags", []):
-                source = ", from: team"
-            print(f"  {e['id']} ({e['confidence']:.2f}) - {e.get('domain', 'general')}{source}")
-    else:
-        print("Always: (no global entries)")
-
-    print()
-
-    if project_entries:
-        print(f"Project ({len(project_entries)}):")
-        for e in sorted(project_entries, key=lambda x: -x.get("confidence", 0)):
-            kind_note = ""
-            if e.get("kind") == "procedure":
+            # Build detail parts
+            details = []
+            if kind == "procedure":
                 sc = e.get("success_count", 0)
                 fc = e.get("failure_count", 0)
-                kind_note = f", procedure, {sc} successes, {fc} failures"
-            elif e.get("kind") != "preference":
-                kind_note = f", {e.get('kind', '')}"
-            print(f"  {e['id']} ({e['confidence']:.2f}) - {e.get('domain', 'general')}{kind_note}")
-    else:
-        print("Project: (no project entries)")
+                details.append(f"{sc}ok/{fc}fail")
+            if e.get("pinned"):
+                details.append("pinned")
 
-    # Check observations
+            detail_str = f" ({', '.join(details)})" if details else ""
+            print(f"  {scope_tag} [{kind}] {conf:.2f} {trigger[:60]}{detail_str}")
+            print(f"           {domain} | {e['id']}")
+    else:
+        print("  No knowledge entries yet.")
+        print("  Run 'prism learn \"<fact>\"' or let extraction discover patterns.")
+
+    # Observations count
+    print()
     obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
     if obs_path.exists():
         obs_count = sum(1 for _ in open(obs_path))
-        print(f"\nPending observations: {obs_count}")
+        config = get_config()
+        threshold = config.get("extract_threshold", 15)
+        print(f"  Observations: {obs_count} pending (extract at {threshold})")
     else:
-        print("\nPending observations: 0")
+        print("  Observations: 0 pending")
 
-    # Archived
+    # Archived count
     archive_dir = PRISM_HOME / "archive"
     if archive_dir.exists():
         archived = list(archive_dir.glob("*.md"))
         if archived:
-            print(f"Archived: {len(archived)} entries")
+            print(f"  Archived: {len(archived)} entries (recoverable)")
 
 
 def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
