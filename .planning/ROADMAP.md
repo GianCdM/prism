@@ -52,7 +52,7 @@ Plans:
 - [x] 02-02-PLAN.md — Auto-sync wiring for learn/correct/forget/maintain/extract, post-extraction sync
 - [x] 02-03-PLAN.md — Unified scope-tagged status display, lifecycle decay/archive verification
 - [x] 02-04-PLAN.md — MCP server scope tagging, batch reinforcement, record auto-sync
-- [ ] 02-05-PLAN.md — Integration verification suite and human end-to-end checkpoint
+- [x] 02-05-PLAN.md — Integration verification suite and human end-to-end checkpoint
 
 ### Phase 3: Bridge + Slash Commands
 **Goal**: High-quality personal engrams can be promoted to publishable team skill format, and the full suite of slash commands for codebase analysis, skill extraction, curation, publishing, and querying is available
