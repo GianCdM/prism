@@ -45,12 +45,14 @@ Plans:
   3. `.claude/prism.md` is auto-generated with priority ordering (corrections > pinned > top preferences) and stays in sync after every knowledge change, so Claude Code reads current knowledge at session start
   4. MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools for mid-session knowledge access via stdio JSON-RPC
   5. Engrams decay in confidence without reinforcement (-0.02/week), get reinforced on reoccurrence, and archive at 0.2 threshold -- `prism maintain` runs the lifecycle and `prism status` shows current state
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md — Agent prompt refinement for Prism ecosystem context, session analysis --since/--last flags
+- [ ] 02-02-PLAN.md — Auto-sync wiring for learn/correct/forget/maintain/extract, post-extraction sync
+- [ ] 02-03-PLAN.md — Unified scope-tagged status display, lifecycle decay/archive verification
+- [ ] 02-04-PLAN.md — MCP server scope tagging, batch reinforcement, record auto-sync
+- [ ] 02-05-PLAN.md — Integration verification suite and human end-to-end checkpoint
 
 ### Phase 3: Bridge + Slash Commands
 **Goal**: High-quality personal engrams can be promoted to publishable team skill format, and the full suite of slash commands for codebase analysis, skill extraction, curation, publishing, and querying is available
@@ -88,7 +90,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation + Observation | 0/3 | Planning complete | - |
-| 2. Personal Knowledge Loop | 0/3 | Not started | - |
+| 1. Foundation + Observation | 3/3 | Complete | 2026-04-14 |
+| 2. Personal Knowledge Loop | 0/5 | Planning complete | - |
 | 3. Bridge + Slash Commands | 0/2 | Not started | - |
 | 4. Registry | 0/2 | Not started | - |
