@@ -35,6 +35,12 @@ def cmd_init() -> None:
     project_id = detect_project_id()
     project_name = detect_project_name()
 
+    # Write project ID cache for hook performance (OBS-05)
+    if project_id != "global":
+        cache_path = Path.cwd() / ".claude" / ".prism_project_id"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(project_id + "\n")
+
     if project_id != "global":
         ensure_dirs(project_id)
         # Write project.json if not exists
@@ -127,7 +133,7 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     mcp_servers["prism"] = {
         "command": "python3",
         "args": [str(PRISM_HOME / "lib" / "mcp_server.py")],
-        "env": {"PRISM_PROJECT": project_id},
+        "env": {"PRISM_PROJECT_ID": project_id},
     }
     existing["mcpServers"] = mcp_servers
 
@@ -164,6 +170,7 @@ def _update_gitignore() -> None:
         ".claude/settings.local.json",
         ".claude/prism.md",
         ".claude/skills/",
+        ".claude/.prism_project_id",
     ]
 
     existing_lines = set()

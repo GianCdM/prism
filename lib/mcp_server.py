@@ -137,7 +137,7 @@ def _relevant(file_path=None, domain=None, project_id=None, limit=5):
 def _record(text, kind="preference", project_id=None, scope="global"):
     """Record a new entry mid-session (like 'prism learn')."""
     if not project_id:
-        project_id = os.environ.get("PRISM_PROJECT", "global")
+        project_id = os.environ.get("PRISM_PROJECT_ID", "global")
 
     ensure_dirs(project_id)
 
@@ -289,7 +289,7 @@ TOOLS = [
 
 def _handle_tool_call(name, arguments):
     """Dispatch MCP tool calls to implementations."""
-    project_id = os.environ.get("PRISM_PROJECT")
+    project_id = os.environ.get("PRISM_PROJECT_ID")
 
     if name == "prism_search":
         results = _search(
