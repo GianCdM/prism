@@ -330,9 +330,9 @@ def cmd_forget(entry_id: str) -> None:
         print(f"Entry not found: {entry_id}")
         return
 
-    # Move file to archive
+    # Move file to archive (validate path is non-empty and points to a file)
     source_path = PRISM_HOME / entry.get("path", "")
-    if source_path.exists():
+    if entry.get("path") and source_path.is_file():
         archive_dir = PRISM_HOME / "archive"
         archive_dir.mkdir(parents=True, exist_ok=True)
         dest = archive_dir / source_path.name
