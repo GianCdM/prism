@@ -67,15 +67,20 @@ def save_registries(data: dict) -> None:
     """Atomic write of registries.json with 0o600 permissions (T-04-01).
 
     Tokens are stored in plaintext, so file permissions must restrict access
-    to the owning user only.
+    to the owning user only. Uses os.open with restrictive permissions from
+    the start to prevent TOCTOU race where the temp file is world-readable.
     """
     REGISTRIES_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = str(REGISTRIES_PATH) + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-    os.rename(tmp, str(REGISTRIES_PATH))
-    os.chmod(str(REGISTRIES_PATH), 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.rename(tmp, str(REGISTRIES_PATH))
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def add_registry(name: str, url: str, token: str = "", writable: bool = True) -> None:
