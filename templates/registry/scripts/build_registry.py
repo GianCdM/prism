@@ -38,6 +38,13 @@ def main():
                 errors.append(f"{label}: could not read plugin.json: {e}")
                 continue
 
+            # Validate required fields before accessing them
+            required = ["name", "description", "author", "repository"]
+            missing = [k for k in required if k not in plugin]
+            if missing:
+                errors.append(f"{label}: missing required fields: {', '.join(missing)}")
+                continue
+
             skill_rel_path = f"skills/{repo_dir.name}/{skill_dir.name}"
 
             skills.append({
