@@ -1,14 +1,19 @@
 """Prism registry configuration management.
 
 Handles multi-registry CRUD operations on ~/.prism/registries.json,
-auto-migration from config.json registry_url, and token generation.
+auto-migration from config.json registry_url, token generation,
+multi-registry fetch/cache/merge, and guided registry creation wizard.
 """
 
 import json
 import os
 import re
 import secrets
+import subprocess
+import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -221,3 +226,208 @@ def resolve_token(registry: dict) -> str:
     if env_token:
         return env_token
     return registry.get("token", "")
+
+
+def get_cached_registry(name: str, url: str, token: str) -> dict:
+    """Fetch a registry's skill-registry.json with per-registry mtime-based cache (D-04).
+
+    Cache path: ~/.prism/cache/{name}.json with 24h TTL based on os.path.getmtime.
+    On fetch failure, returns stale cache if available, otherwise {"skills": []}.
+    Each urllib.request.urlopen has timeout=15 to mitigate T-04-11 (DoS from unreachable registry).
+    """
+    cache_path = CACHE_DIR / f"{name}.json"
+
+    # Check cache freshness via mtime
+    if cache_path.exists():
+        try:
+            age = time.time() - os.path.getmtime(str(cache_path))
+            if age < CACHE_TTL:
+                with open(cache_path) as f:
+                    return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    # Fetch fresh from registry Worker API
+    headers = {"User-Agent": "Prism/1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        req = urllib.request.Request(
+            f"{url.rstrip('/')}/api/skills/registry",
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+
+        # Write cache atomically (Pitfall 4: ensure cache dir exists)
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(cache_path) + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.rename(tmp, str(cache_path))
+        return data
+
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
+        # On failure, return stale cache if available
+        if cache_path.exists():
+            print(f"Warning: could not reach registry '{name}': {e}. Using stale cache.", file=sys.stderr)
+            try:
+                with open(cache_path) as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError):
+                pass
+        print(f"Warning: could not reach registry '{name}': {e}", file=sys.stderr)
+        return {"skills": []}
+
+
+def fetch_all_registries() -> list:
+    """Fetch skills from all configured registries, merge with source tagging (D-03).
+
+    Each skill gets a '_registry' field set to the source registry name.
+    Deduplicates by (name, repository) -- keeps first occurrence (registry list order).
+    Each registry fetch is wrapped in try/except so one failure doesn't block others (T-04-11).
+    """
+    registries = load_registries()
+    all_skills = []
+    seen = set()
+
+    for entry in registries.get("registries", []):
+        try:
+            token = resolve_token(entry)
+            data = get_cached_registry(entry["name"], entry["url"], token)
+            for skill in data.get("skills", []):
+                key = (skill.get("name", ""), skill.get("repository", ""))
+                if key not in seen:
+                    seen.add(key)
+                    skill["_registry"] = entry["name"]
+                    all_skills.append(skill)
+        except Exception as e:
+            print(f"Warning: skipping registry '{entry.get('name', '?')}': {e}", file=sys.stderr)
+            continue
+
+    return all_skills
+
+
+def get_write_target(registry_name: Optional[str] = None) -> dict:
+    """Resolve the target registry for publish operations (D-05/D-06).
+
+    If registry_name is provided, looks it up and checks writable flag.
+    If None, uses the default registry.
+    Raises ValueError if not found, no default, or not writable.
+    """
+    if registry_name:
+        entry = get_registry(registry_name)
+        if not entry.get("writable", True):
+            raise ValueError(f"Registry '{registry_name}' is read-only.")
+        return entry
+
+    entry = get_default_registry()
+    if not entry:
+        raise ValueError("No default registry configured. Run 'prism registry default NAME' to set one.")
+    if not entry.get("writable", True):
+        raise ValueError(f"Default registry '{entry['name']}' is read-only.")
+    return entry
+
+
+def cmd_registry_create() -> None:
+    """Guided wizard for creating a new Prism registry (D-08).
+
+    Walks user through: create GitHub repo, deploy Worker, set secrets,
+    generate API token, configure local Prism. Does NOT automate wrangler
+    deploy or wrangler secret -- provides instructions only.
+    """
+    print()
+    print("\033[1m=== Prism Registry Setup Wizard ===\033[0m")
+    print()
+
+    # Step 1: Registry name
+    name = input("Registry name (kebab-case): ").strip().lower()
+    if not name:
+        print("\033[31mRegistry name is required.\033[0m")
+        return
+    if len(name) > 1 and not _NAME_RE.match(name):
+        print(f"\033[31mInvalid name '{name}'. Use kebab-case: [a-z0-9][a-z0-9-]*[a-z0-9]\033[0m")
+        return
+
+    # Step 2: GitHub org/repo
+    org_repo = input("GitHub org/repo (e.g., acme/skill-registry): ").strip()
+    if not org_repo or "/" not in org_repo:
+        print("\033[31mPlease provide org/repo format (e.g., acme/skill-registry).\033[0m")
+        return
+
+    repo_name = org_repo.split("/")[-1]
+
+    # Step 3: Check gh CLI
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            print("\033[33mWarning: gh CLI not authenticated. Run 'gh auth login' first.\033[0m")
+            print("You can continue and create the repo manually.")
+    except FileNotFoundError:
+        print("\033[33mWarning: gh CLI not found. Install it from https://cli.github.com/\033[0m")
+        print("You can continue and create the repo manually on GitHub.")
+    except subprocess.TimeoutExpired:
+        print("\033[33mWarning: gh CLI timed out.\033[0m")
+
+    # Step 4: Create repo
+    print(f"\nCreating GitHub repo: {org_repo}...")
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "create", org_repo, "--private", "--confirm"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"\033[32mRepo created: https://github.com/{org_repo}\033[0m")
+        else:
+            print(f"\033[33mCould not create repo automatically: {result.stderr.strip()}\033[0m")
+            print(f"Create it manually at: https://github.com/new")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        print("\033[33mCould not create repo. Create it manually at: https://github.com/new\033[0m")
+
+    # Step 5: Generate token
+    generated_token = generate_token()
+
+    # Step 6: Print setup instructions
+    print(f"""
+\033[1mNext steps:\033[0m
+
+  1. Clone your new repo:
+     git clone https://github.com/{org_repo}.git
+     cd {repo_name}
+
+  2. Copy the registry template:
+     cp -r ~/.prism/templates/registry/* .
+     mkdir -p skills .github/workflows
+     cp ci/*.yml .github/workflows/
+
+  3. Install and deploy the Worker:
+     cd worker && npm install && wrangler deploy
+
+  4. Set Worker secrets:
+     wrangler secret put GH_TOKEN
+     (paste your GitHub Personal Access Token)
+     wrangler secret put REGISTRY_TOKENS
+     (paste: {generated_token})
+
+  5. Update wrangler.toml:
+     Set GH_OWNER and GH_REPO to match your repo
+
+  6. Commit and push:
+     git add . && git commit -m "Initial registry setup" && git push
+""")
+
+    # Step 7: Auto-add registry locally
+    try:
+        add_registry(name, f"https://{name}.workers.dev", generated_token)
+    except ValueError as e:
+        print(f"\033[33mNote: {e}\033[0m")
+
+    # Step 8: Summary
+    print(f"\033[32mRegistry '{name}' configured locally.\033[0m")
+    print(f"  URL:   https://{name}.workers.dev")
+    print(f"  Token: {generated_token[:8]}...")
+    print(f"\nUpdate the URL after deploying your Worker if it differs.")

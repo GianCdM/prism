@@ -682,8 +682,8 @@ def cmd_registry(args) -> None:
         return
 
     if subcmd == "create":
-        print("Registry creation wizard requires the registry template (Phase 4 Plan 02).")
-        print("Use \033[1mprism registry add\033[0m for manual setup.")
+        from .registry import cmd_registry_create
+        cmd_registry_create()
         return
 
     if subcmd == "add":
