@@ -308,8 +308,19 @@ export default {
 
     // GET /file/* -- generic file proxy (for fetching specific skill files)
     if (path.startsWith("/file/") && request.method === "GET") {
-      const filePath = path.replace("/file/", "");
+      const filePath = decodeURIComponent(path.replace("/file/", ""));
       if (!filePath) return badRequest("File path required");
+
+      // Sanitize: reject path traversal attempts
+      if (filePath.includes("..") || filePath.startsWith("/") || filePath.includes("//")) {
+        return badRequest("Invalid file path");
+      }
+
+      // Restrict to skills/ directory only
+      if (!filePath.startsWith("skills/")) {
+        return badRequest("File access restricted to skills/ directory");
+      }
+
       const resp = await fetchFromGitHub(env, filePath);
       if (!resp.ok) return json({ error: `File not found: ${filePath}` }, 404);
       const body = await resp.text();
