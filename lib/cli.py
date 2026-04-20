@@ -292,6 +292,13 @@ def _cmd_analyze_sessions(args) -> None:
             name = os.path.basename(cwd.rstrip("/")) if cwd else pid
             total_size = sum(s["size"] for s in sess_list)
             print("{} ({}): {} sessions, {:.0f} KB".format(name, pid, len(sess_list), total_size / 1024))
+            import time as _time
+            for s in sorted(sess_list, key=lambda x: os.path.getmtime(x["path"]) if os.path.exists(x["path"]) else 0, reverse=True):
+                try:
+                    date_str = _time.strftime("%Y-%m-%d", _time.localtime(os.path.getmtime(s["path"])))
+                except OSError:
+                    date_str = "unknown"
+                print("  {}  {}  {:.0f} KB".format(s["session_id"], date_str, s["size"] / 1024))
         return
 
     mode = "Dry run" if args.dry_run else "Analyzing"
