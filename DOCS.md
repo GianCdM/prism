@@ -112,7 +112,7 @@ prism init
 
 ### 1. Hooks
 
-Adds PreToolUse and PostToolUse hooks to `~/.claude/settings.local.json`:
+Adds a PreToolUse hook to `.claude/settings.local.json` (project-level):
 
 ```json
 {
@@ -120,17 +120,10 @@ Adds PreToolUse and PostToolUse hooks to `~/.claude/settings.local.json`:
     "PreToolUse": [{
       "type": "command",
       "command": "~/.prism/hooks/capture.sh pre"
-    }],
-    "PostToolUse": [{
-      "type": "command",
-      "command": "~/.prism/hooks/capture.sh post",
-      "async": true
     }]
   }
 }
 ```
-
-PostToolUse runs async to avoid blocking Claude Code.
 
 ### 2. MCP Server
 
@@ -161,7 +154,7 @@ Creates an initial `.claude/prism.md` with any existing knowledge for the projec
 Prism identifies projects by a stable hash derived from git metadata. Detection order:
 
 1. `PRISM_PROJECT_ID` environment variable
-2. `.prism_project_id` file in project root (written by `prism init`)
+2. `.claude/.prism_project_id` file in project's `.claude/` directory (written by `prism init`)
 3. SHA256 of git remote URL (first 12 hex chars)
 4. SHA256 of git repo root path
 5. `"global"` (fallback)
@@ -355,7 +348,6 @@ Full-text search across all engrams using token-based Jaccard similarity scoring
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | required | Search query |
-| `project_id` | string | auto-detect | Filter by project |
 | `limit` | number | 5 | Max results |
 
 Returns scored results with trigger, tags, confidence, and relevance score. Boosts error-related queries toward `error_recipe` entries.
@@ -366,7 +358,7 @@ Retrieve a specific engram by ID.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `entry_id` | string | required | Engram ID |
+| `id` | string | required | Engram ID (kebab-case slug) |
 
 Returns full entry with all metadata and content.
 
@@ -376,8 +368,8 @@ Find entries relevant to the current context (file being edited, tool being used
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `context` | string | required | Current context description |
-| `project_id` | string | auto-detect | Filter by project |
+| `file_path` | string | optional | Current file path (used to infer domain) |
+| `domain` | string | optional | Explicit domain (python, react, testing, etc.) |
 | `limit` | number | 5 | Max results |
 
 #### `prism_record`
@@ -386,10 +378,12 @@ Record an observation directly from the Claude Code conversation.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `text` | string | required | Observation text |
-| `project_id` | string | auto-detect | Target project |
+| `text` | string | required | The knowledge to record |
+| `kind` | string | `preference` | Type: `preference`, `correction`, `procedure`, `error_recipe`, `domain_fact`, `tool_pattern` |
 
-Appends to observations.jsonl and triggers sync if thresholds are met.
+Writes a new engram immediately and auto-syncs `.claude/prism.md`.
+
+> **Project scoping**: All MCP tools scope to the current project automatically via the `PRISM_PROJECT_ID` environment variable set by `prism init`. No `project_id` argument is needed.
 
 ### Implementation notes
 
@@ -414,11 +408,9 @@ Appends to observations.jsonl and triggers sync if thresholds are met.
 | `prism extract [--project ID]` | Run extraction pipeline on observations |
 | `prism review --session ID [--project ID]` | Analyze a session transcript |
 | `prism analyze-sessions [flags]` | Bootstrap from existing Claude Code sessions |
-| `prism sync [--project ID] [--output-dir DIR]` | Generate .claude/prism.md |
 | `prism maintain` | Run confidence decay and archive expired engrams |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format |
 | `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations |
-| `prism procedures [--project ID]` | List procedure engrams with statistics |
 | `prism config [key [value]]` | Get or set configuration |
 
 ### `prism analyze-sessions` flags
@@ -487,7 +479,7 @@ Prism includes 12 slash commands available in Claude Code after `prism init`. Th
 ### Output
 
 All extraction and analysis commands write to `_analysis/` in the project root:
-- `_analysis/extracted_skills_codebase/` -- Skill directories with `plugin.json` + `SKILL.md`
+- `_analysis/extracted_skills_codebase/` and `_analysis/extracted_skills_history/` -- Skill directories with `plugin.json` + `SKILL.md`
 - `_analysis/.published.json` -- Delta tracking for published skills
 
 ---
@@ -534,8 +526,6 @@ _analysis/extracted_skills_codebase/typescript-strict-mode/
 
 ## Team Registry
 
-> Phase 4 (not yet implemented). This section describes the planned design.
-
 Teams share skills through registries backed by GitHub repos and Cloudflare Workers.
 
 ### Architecture
@@ -546,17 +536,19 @@ prism CLI  ->  Cloudflare Worker  ->  GitHub Repo
   (query)       (auth, cache)        (skill-registry.json)
 ```
 
-### Planned commands
+### Commands
 
 ```bash
-prism registry create          # Set up new registry (GitHub repo + Worker)
-prism registry add <url>       # Add a registry
-prism registry remove <name>   # Remove a registry
-prism registry list            # List configured registries
-prism registry default <name>  # Set default registry
-prism registry token create    # Generate API token
-prism registry token revoke    # Revoke API token
+prism registry create                        # Set up new registry (guided wizard)
+prism registry add <name> --url <url>        # Add a registry (--token, --read-only optional)
+prism registry remove <name>                 # Remove a registry
+prism registry list                          # List configured registries
+prism registry default <name>                # Set default write target
+prism registry token create <name>           # Generate API token
+prism registry token revoke <name> <token>   # Revoke an API token
 ```
+
+Registry configuration is stored in `~/.prism/registries.json` with per-registry tokens (file permissions `0o600`).
 
 ### Multi-registry support
 
@@ -604,7 +596,7 @@ dependency resolution that prevents phantom dependencies.
 
 ### Index (JSON)
 
-Location: `~/.prism/global/engrams/index.json`
+Location: `~/.prism/index.json`
 
 ```json
 {
@@ -757,7 +749,7 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     bridge.py                    # Engram-to-skill promotion
     scrub.py                     # Secret scrubbing
   hooks/
-    capture.sh                   # Claude Code hook (PreToolUse/PostToolUse)
+    capture.sh                   # Claude Code hook (PreToolUse)
   agents/
     extractor.md                 # Phase 1 extraction prompt (Haiku)
     validator.md                 # Phase 2 validation prompt (Sonnet)
@@ -775,11 +767,11 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     audit-code/
     run-analysis-pipeline/
     run-history-pipeline/
+  index.json                     # Master engram index
   schemas/
     plugin.schema.json           # Skill validation schema
   global/
     engrams/
-      index.json                 # Master engram index
       *.md                       # Global engram files
   projects/
     <project-hash>/

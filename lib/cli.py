@@ -28,11 +28,6 @@ def main() -> None:
     p_review.add_argument("--session", required=True, help="Session ID to review")
     p_review.add_argument("--project", help="Override project ID")
 
-    # sync
-    p_sync = subparsers.add_parser("sync", help="Generate IDE context files")
-    p_sync.add_argument("--project", help="Override project ID")
-    p_sync.add_argument("--output-dir", help="Override output directory")
-
     # learn
     p_learn = subparsers.add_parser("learn", help="Manually teach a preference or fact")
     p_learn.add_argument("text", help="The knowledge to learn")
@@ -57,9 +52,6 @@ def main() -> None:
     p_promote.add_argument("--name", dest="skill_name", help="Override auto-generated skill name")
 
     # procedures
-    p_procs = subparsers.add_parser("procedures", help="List procedures with stats")
-    p_procs.add_argument("--project", help="Override project ID")
-
     # log
     p_log = subparsers.add_parser("log", help="Show recent observations or extractions")
     p_log.add_argument("--last", type=int, default=20, help="Number of entries")
@@ -169,12 +161,6 @@ def main() -> None:
             print("Review complete: no new insights (status: {})".format(
                 results.get('status', 'unknown')))
 
-    elif args.command == "sync":
-        from .project import detect_project_id
-        from .sync import sync_claude_code
-        project_id = args.project or detect_project_id()
-        sync_claude_code(project_id, output_dir=args.output_dir)
-
     elif args.command == "learn":
         from .commands import cmd_learn
         cmd_learn(args.text, project_id=args.project, scope=args.scope)
@@ -194,10 +180,6 @@ def main() -> None:
     elif args.command == "promote":
         from .bridge import cmd_promote
         cmd_promote(args.id, name_override=args.skill_name)
-
-    elif args.command == "procedures":
-        from .commands import cmd_procedures
-        cmd_procedures(project_id=args.project)
 
     elif args.command == "log":
         from .commands import cmd_log

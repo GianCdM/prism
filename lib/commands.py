@@ -208,7 +208,7 @@ def cmd_status(project_id: Optional[str] = None) -> None:
         line_count = len(claude_ctx.read_text().split("\n"))
         print(f"  Context: .claude/prism.md ({line_count} lines)")
     else:
-        print("  Context: not generated (run 'prism sync')")
+        print("  Context: not generated (run 'prism extract' or 'prism learn' to generate)")
 
     # Unified display with scope tags (D-06)
     print()
@@ -477,29 +477,6 @@ def cmd_maintain() -> None:
         project_id = detect_project_id()
         sync_claude_code(project_id)
 
-
-def cmd_procedures(project_id: Optional[str] = None) -> None:
-    """List all procedures with success/failure counts."""
-    if not project_id:
-        project_id = detect_project_id()
-
-    procedures = list_entries(project_id=project_id, kind="procedure")
-
-    if not procedures:
-        print("No procedures found.")
-        return
-
-    print(f"Procedures ({len(procedures)}):")
-    print()
-    for p in sorted(procedures, key=lambda x: -x.get("confidence", 0)):
-        trigger = p.get("trigger", "").strip('"')
-        sc = p.get("success_count", 0)
-        fc = p.get("failure_count", 0)
-        conf = p.get("confidence", 0)
-        scope = p.get("scope", "project")
-        print(f"  [{conf:.2f}] {trigger}")
-        print(f"         {sc} successes, {fc} failures | scope: {scope} | id: {p['id']}")
-        print()
 
 
 def cmd_config(key=None, value=None) -> None:
