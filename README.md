@@ -53,7 +53,6 @@ If you have existing sessions, mine them immediately with commands below. If not
 
 ```bash
 prism analyze-sessions --last 5   # prints session IDs with observation counts
-prism log --last 20               # confirms observations were written
 prism extract                     # runs the extraction pipeline
 ```
 
