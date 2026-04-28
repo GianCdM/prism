@@ -9,8 +9,9 @@ PRISM_HOME = Path(os.environ.get("PRISM_HOME", os.path.expanduser("~/.prism")))
 
 DEFAULT_CONFIG = {
     "extract_threshold": 15,        # observations before auto-extract triggers
-    "decay_rate_per_week": 0.02,    # confidence decay per week without observation
-    "archive_threshold": 0.2,       # archive entries below this confidence
+    "decay_rate_per_week": 0.05,    # confidence decay per week without observation
+    "archive_threshold": 0.2,       # move to archive/ below this confidence
+    "delete_threshold": 0.0,        # permanently delete from archive/ at or below this confidence
     "publish_min_confidence": 0.7,  # minimum confidence to publish to team
     "publish_min_evidence": 3,      # minimum evidence count to publish to team
     "max_context_lines": 100,       # max lines in generated context file

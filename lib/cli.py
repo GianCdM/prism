@@ -79,7 +79,8 @@ def main() -> None:
     p_uninstall.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
 
     # maintain
-    subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
+    p_maintain = subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
+    p_maintain.add_argument("--quiet", action="store_true", help="Suppress output (for hooks)")
 
     # promote
     p_promote = subparsers.add_parser("promote", help="Promote engram to publishable skill format")
@@ -232,7 +233,7 @@ def main() -> None:
 
     elif args.command == "maintain":
         from .commands import cmd_maintain
-        cmd_maintain()
+        cmd_maintain(quiet=getattr(args, "quiet", False))
 
     elif args.command == "promote":
         from .bridge import cmd_promote

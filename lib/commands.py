@@ -26,7 +26,7 @@ from .project import detect_project_id, detect_project_name
 def cmd_init() -> None:
     """Initialize prism for the current project.
 
-    Creates ~/.prism/ structure, configures hooks + MCP in settings.local.json,
+    Creates ~/.prism/ structure, configures hooks in settings.local.json and MCP in ~/.claude.json,
     symlinks skills, updates .gitignore, generates initial .claude/prism.md.
     Idempotent -- safe to re-run.
     """
@@ -59,7 +59,7 @@ def cmd_init() -> None:
             }
             project_json.write_text(json.dumps(info, indent=2) + "\n")
 
-    # Configure hooks and MCP server in .claude/settings.local.json
+    # Configure hooks (settings.local.json) and MCP server (~/.claude.json)
     _setup_hooks_and_mcp(project_id)
 
     # Symlink slash commands from ~/.prism/skills/ to .claude/skills/
@@ -122,6 +122,17 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
             existing_cmds = {h.get("command", "") for g in hooks[event] for h in g.get("hooks", [])}
             if hook_entry["hooks"][0]["command"] not in existing_cmds:
                 hooks[event].append(hook_entry)
+
+    # SessionStart: run decay maintenance once per session
+    maintain_cmd = str(PRISM_HOME / "prism") + " maintain --quiet"
+    session_start_entry = {"hooks": [{"type": "command", "command": maintain_cmd}]}
+    existing_session_cmds = {
+        h.get("command", "")
+        for g in hooks.get("SessionStart", [])
+        for h in g.get("hooks", [])
+    }
+    if maintain_cmd not in existing_session_cmds:
+        hooks.setdefault("SessionStart", []).append(session_start_entry)
 
     local["hooks"] = hooks
     local_path.write_text(json.dumps(local, indent=2) + "\n")
@@ -467,12 +478,63 @@ tags: [manual, correction]
     print(f"Corrected: {entry_id} -> {new_id} (confidence: 0.9)")
 
 
-def cmd_maintain() -> None:
-    """Run confidence decay and archive expired entries."""
-    config = get_config()
-    decay_rate = config.get("decay_rate_per_week", 0.02)
-    archive_threshold = config.get("archive_threshold", 0.2)
+def _update_frontmatter_confidence(path: Path, new_conf: float) -> None:
+    """Rewrite the confidence: line in a markdown file's YAML frontmatter."""
+    try:
+        text = path.read_text()
+        lines = text.splitlines(keepends=True)
+        in_frontmatter = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "---":
+                in_frontmatter = not in_frontmatter
+                continue
+            if in_frontmatter and stripped.startswith("confidence:"):
+                lines[i] = f"confidence: {round(new_conf, 3)}\n"
+                break
+        path.write_text("".join(lines))
+    except OSError:
+        pass
 
+
+def cmd_maintain(quiet: bool = False) -> None:
+    """Run confidence decay, archive low-confidence entries, delete zeroed archive entries."""
+    def log(msg: str) -> None:
+        if not quiet:
+            print(msg)
+
+    config = get_config()
+    decay_rate = config.get("decay_rate_per_week", 0.05)
+    archive_threshold = config.get("archive_threshold", 0.2)
+    delete_threshold = config.get("delete_threshold", 0.0)
+
+    # Pass 1: delete archive files whose confidence has reached the delete threshold
+    archive_dir = PRISM_HOME / "archive"
+    deleted = 0
+    if archive_dir.is_dir():
+        for archive_file in archive_dir.glob("*.md"):
+            try:
+                text = archive_file.read_text()
+            except OSError:
+                continue
+            conf = None
+            in_fm = False
+            for line in text.splitlines():
+                if line.strip() == "---":
+                    in_fm = not in_fm
+                    continue
+                if in_fm and line.strip().startswith("confidence:"):
+                    try:
+                        conf = float(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        pass
+                    break
+            if conf is not None and conf <= delete_threshold:
+                archive_file.unlink()
+                deleted += 1
+                log(f"  Deleted: {archive_file.stem} (confidence: {conf:.2f})")
+
+    # Pass 2: decay active engrams, archive those that cross archive_threshold
     index = load_index()
     today = date.today()
     decayed = 0
@@ -480,7 +542,6 @@ def cmd_maintain() -> None:
     to_archive_ids = set()
 
     for entry in index["engrams"]:
-        # Skip pinned entries
         if entry.get("pinned"):
             continue
 
@@ -501,28 +562,25 @@ def cmd_maintain() -> None:
         new_conf = max(0.0, old_conf - (decay_rate * weeks_since))
 
         if new_conf < archive_threshold:
-            # Archive the entry file
             source_path = PRISM_HOME / entry.get("path", "")
             if entry.get("path") and source_path.is_file():
-                archive_dir = PRISM_HOME / "archive"
                 archive_dir.mkdir(parents=True, exist_ok=True)
+                _update_frontmatter_confidence(source_path, new_conf)
                 shutil.move(str(source_path), str(archive_dir / source_path.name))
             to_archive_ids.add(entry["id"])
             archived += 1
-            print(f"  Archived: {entry['id']} (confidence: {old_conf:.2f} -> {new_conf:.2f})")
+            log(f"  Archived: {entry['id']} (confidence: {old_conf:.2f} -> {new_conf:.2f})")
         elif new_conf < old_conf:
             entry["confidence"] = round(new_conf, 3)
             decayed += 1
 
-    # Batch index update: remove archived entries and save once
     if to_archive_ids or decayed > 0:
         index["engrams"] = [e for e in index["engrams"] if e["id"] not in to_archive_ids]
         save_index(index)
 
-    print(f"Maintenance complete: {decayed} decayed, {archived} archived")
+    log(f"Maintenance complete: {decayed} decayed, {archived} archived, {deleted} deleted")
 
-    # Auto-sync .claude/prism.md if anything changed (CTX-04, D-07)
-    if decayed > 0 or archived > 0:
+    if decayed > 0 or archived > 0 or deleted > 0:
         from .project import detect_project_id
         from .sync import sync_claude_code
         project_id = detect_project_id()
