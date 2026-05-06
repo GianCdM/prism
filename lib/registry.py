@@ -13,6 +13,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -233,30 +234,50 @@ def resolve_token(registry: dict) -> str:
     return registry.get("token", "")
 
 
+def _cache_age_hours(cached: dict) -> float:
+    """Return how many hours ago the cache was written, or inf if unknown."""
+    cached_at = cached.get("_cached_at")
+    if not cached_at:
+        return float("inf")
+    try:
+        ts = datetime.fromisoformat(cached_at)
+        age = datetime.now(timezone.utc) - ts
+        return age.total_seconds() / 3600
+    except (ValueError, TypeError):
+        return float("inf")
+
+
 def get_cached_registry(name: str, url: str, token: str) -> dict:
     """Fetch a registry's skill-registry.json using ETag-based conditional GET (D-04).
 
-    Cache path: ~/.prism/cache/{name}.json stores skills + '_etag' field.
-    On each call, sends If-None-Match if a cached ETag exists. Server returns:
-      304 Not Modified — no body, use cached data (registry unchanged)
-      200 OK           — fresh data + new ETag, replace cache
-    On fetch failure, returns stale cache if available, otherwise {"skills": []}.
-    Each urllib.request.urlopen has timeout=15 to mitigate T-04-11 (DoS from unreachable registry).
+    Cache path: ~/.prism/cache/{name}.json stores skills + '_etag' + '_cached_at'.
+    On each call:
+      - If cache is fresh (< cache_max_age_hours): send If-None-Match for a cheap 304 check.
+      - If cache is stale (>= cache_max_age_hours): skip ETag to force a full refresh.
+    On fetch failure, returns stale cache with an age warning, otherwise {"skills": []}.
+    Each urllib.request.urlopen has timeout=15 to mitigate DoS from unreachable registries.
     """
+    config = get_config()
+    max_age_hours: float = config.get("cache_max_age_hours", 24)
     cache_path = CACHE_DIR / f"{name}.json"
 
-    # Load cached data and extract stored ETag if available
+    # Load cached data and extract stored ETag + age
     cached = None
     stored_etag = None
+    cache_is_stale = True
     if cache_path.exists():
         try:
             with open(cache_path) as f:
                 cached = json.load(f)
-            stored_etag = cached.get("_etag")
+            age_hours = _cache_age_hours(cached)
+            cache_is_stale = age_hours >= max_age_hours
+            # Only send ETag when cache is still fresh — stale cache forces a full refresh
+            if not cache_is_stale:
+                stored_etag = cached.get("_etag")
         except (OSError, json.JSONDecodeError):
             cached = None
 
-    # Build request — conditional GET if we have a cached ETag
+    # Build request — conditional GET only when cache is fresh
     headers = {"User-Agent": "Prism/1.0"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -283,6 +304,7 @@ def get_cached_registry(name: str, url: str, token: str) -> dict:
             cache_data = dict(data)
             if new_etag:
                 cache_data["_etag"] = new_etag
+            cache_data["_cached_at"] = datetime.now(timezone.utc).isoformat()
             tmp = str(cache_path) + ".tmp"
             with open(tmp, "w") as f:
                 json.dump(cache_data, f)
@@ -290,9 +312,15 @@ def get_cached_registry(name: str, url: str, token: str) -> dict:
         return data
 
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-        # On failure, return stale cache if available (no time limit — stale beats nothing)
         if cached:
-            print(f"Warning: could not reach registry '{name}': {e}. Using stale cache.", file=sys.stderr)
+            age_hours = _cache_age_hours(cached)
+            age_msg = f"{age_hours:.0f}h old" if age_hours != float("inf") else "age unknown"
+            stale_note = f" (cache is {age_msg})" if cache_is_stale else ""
+            print(
+                f"Warning: could not reach registry '{name}': {e}. "
+                f"Using stale cache{stale_note}.",
+                file=sys.stderr,
+            )
             return cached
         print(f"Warning: could not reach registry '{name}': {e}", file=sys.stderr)
         return {"skills": []}

@@ -957,7 +957,7 @@ def cmd_config(key=None, value=None) -> None:
 
 
 def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
-            json_output: bool = False) -> None:
+            rejected: bool = False, json_output: bool = False) -> None:
     """Show recent observations, extraction history, or session insights.
 
     Default: human-readable table with timestamp, event, tool, summary (D-12).
@@ -968,6 +968,9 @@ def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
         return
     if insights:
         _log_insights(last_n)
+        return
+    if rejected:
+        _log_rejected(last_n, json_output)
         return
 
     project_id = detect_project_id()
@@ -1013,7 +1016,63 @@ def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
             continue
 
     print()
-    print("  Use --json for raw JSONL output, --insights for session review findings.")
+    print("  Use --json for raw JSONL output, --insights for session review findings, --rejected for rejections.")
+
+
+def _log_rejected(last_n: int, json_output: bool = False) -> None:
+    """Show the most recent rejected candidates with their failing gate reasons."""
+    log_path = PRISM_HOME / "validation-log.jsonl"
+    if not log_path.exists():
+        print("No validation log found. Run 'prism extract' first.")
+        return
+
+    lines = log_path.read_text().strip().split("\n")
+    rejected = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            if entry.get("decision", "").upper() == "REJECTED":
+                rejected.append(entry)
+        except json.JSONDecodeError:
+            continue
+
+    if not rejected:
+        print("No rejected candidates in the validation log.")
+        return
+
+    recent = rejected[-last_n:]
+
+    if json_output:
+        for entry in recent:
+            print(json.dumps(entry))
+        return
+
+    print("\033[1mRejected candidates\033[0m (last {} of {})".format(
+        len(recent), len(rejected)))
+    print()
+
+    gate_order = ["constitution", "evidence", "contradiction", "safety", "novelty"]
+
+    for entry in recent:
+        ts = entry.get("timestamp", "?")[:19]
+        candidate = entry.get("candidate", "unknown")
+        gates = entry.get("gates", {})
+
+        failed = [
+            (g, gates[g].get("reason", "no reason given"))
+            for g in gate_order
+            if g in gates and not gates[g].get("passed", True)
+        ]
+
+        print("  \033[33m{}\033[0m  [{}]".format(candidate, ts))
+        if failed:
+            for gate_name, reason in failed:
+                print("    \033[31m✗ {}\033[0m: {}".format(gate_name, reason))
+        else:
+            print("    (no gate failure details recorded)")
+        print()
 
 
 def _log_extractions(last_n: int) -> None:

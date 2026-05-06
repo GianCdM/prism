@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "review_interval": 5,           # observations between session reviews (0 = disable)
     "review_timeout": 60,           # seconds before review subprocess is killed
     "registry_url": "",             # git URL for team registry
+    "cache_max_age_hours": 24,      # max age before registry cache is considered stale
 }
 
 

@@ -16,6 +16,7 @@ Cache logic:
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from .config import PRISM_HOME
 
@@ -211,6 +212,49 @@ def _make_snippet(text: str, query: str, width: int = 160) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Fallback: plain LIKE search (used when FTS5 query syntax is invalid)
+# ---------------------------------------------------------------------------
+
+def _like_search(
+    conn: sqlite3.Connection,
+    query: str,
+    project_id: str,
+    session_ids: list[str],
+) -> list[sqlite3.Row]:
+    """Full-scan LIKE search across user_prompts and tools_used.
+
+    Used as fallback when the FTS5 query parser rejects the query string (e.g.
+    unbalanced quotes, bare AND/OR). Splits query into tokens and requires ALL
+    tokens to appear in at least one of the two text columns.
+    """
+    terms = [t for t in query.split() if t]
+    if not terms:
+        return []
+
+    placeholders = ",".join("?" * len(session_ids))
+    # Each term must match in user_prompts OR tools_used
+    conditions = " AND ".join(
+        ["(f.user_prompts LIKE ? OR f.tools_used LIKE ?)"] * len(terms)
+    )
+    like_params: list[str] = []
+    for term in terms:
+        like_params.extend([f"%{term}%", f"%{term}%"])
+
+    return conn.execute(
+        f"""
+        SELECT s.session_id, s.date, s.cwd, f.user_prompts
+        FROM   sessions_fts f
+        JOIN   sessions s ON f.session_id = s.session_id
+        WHERE  {conditions}
+          AND  s.project_id = ?
+          AND  s.session_id IN ({placeholders})
+        LIMIT  10
+        """,
+        like_params + [project_id] + session_ids,
+    ).fetchall()
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -224,8 +268,8 @@ def search_sessions(sessions: list[dict], query: str, project_id: str) -> list[d
         project_id: Prism project ID — scopes both index writes and search results.
 
     Returns:
-        Up to 10 result dicts {session_id, date, cwd, snippet, indexed_new},
-        ordered by FTS5 relevance rank.
+        Up to 10 result dicts {session_id, date, cwd, snippet},
+        ordered by FTS5 relevance rank (or unranked for LIKE fallback).
     """
     conn = _open_db()
     _ensure_schema(conn)
@@ -265,10 +309,19 @@ def search_sessions(sessions: list[dict], query: str, project_id: str) -> list[d
             """,
             [query, project_id] + session_ids,
         ).fetchall()
-    except sqlite3.OperationalError:
-        # FTS5 parse error (e.g. unbalanced quotes) — return empty rather than crash
-        conn.close()
-        return []
+    except sqlite3.OperationalError as exc:
+        print(
+            f"Warning: FTS5 query syntax error ({exc}). "
+            "FTS5 operators (AND, OR, NOT, prefix*) and special characters like "
+            'unbalanced quotes are not supported in plain keyword searches. '
+            "Falling back to plain keyword search (no relevance ranking).",
+            file=sys.stderr,
+        )
+        try:
+            rows = _like_search(conn, query, project_id, session_ids)
+        except sqlite3.OperationalError:
+            conn.close()
+            return []
 
     results = [
         {

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import PRISM_HOME, get_config, get_engrams_dir
-from .index import list_entries, load_index
+from .index import list_entries, load_index, reinforce_entries
 
 
 def sync_claude_code(project_id: str, output_dir: Optional[str] = None) -> str:
@@ -34,6 +34,9 @@ def sync_claude_code(project_id: str, output_dir: Optional[str] = None) -> str:
     # Select what goes into the system prompt (the PUSH layer)
     prompt_entries = _select_prompt_entries(all_entries)
     publish_ready = _find_publish_ready(all_entries)
+
+    # Credit pushed engrams so they don't decay while actively in context
+    reinforce_entries([e["id"] for e in prompt_entries])
 
     # Categorize selected entries
     corrections = [e for e in prompt_entries if e.get("kind") == "correction"]

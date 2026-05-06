@@ -93,6 +93,8 @@ def main() -> None:
     p_log.add_argument("--last", type=int, default=20, help="Number of entries")
     p_log.add_argument("--extractions", action="store_true", help="Show extraction history")
     p_log.add_argument("--insights", action="store_true", help="Show session review insights only")
+    p_log.add_argument("--rejected", action="store_true",
+                       help="Show rejected candidates with failing gate reasons")
     p_log.add_argument("--json", action="store_true", dest="json_output",
                        help="Output raw JSONL")
 
@@ -242,7 +244,8 @@ def main() -> None:
     elif args.command == "log":
         from .commands import cmd_log
         cmd_log(last_n=args.last, extractions=args.extractions,
-                insights=args.insights, json_output=args.json_output)
+                insights=args.insights, rejected=args.rejected,
+                json_output=args.json_output)
 
     elif args.command == "analyze-sessions":
         _cmd_analyze_sessions(args)
