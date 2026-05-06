@@ -214,22 +214,64 @@ After outputting the JSON array:
 
 
 def _parse_validation_output(output: str, project_id: str) -> dict:
-    """Parse Sonnet's validation output and extract decisions."""
+    """Parse Sonnet's validation output and extract decisions.
+
+    Handles three Sonnet output shapes:
+    1. Multiple ```json blocks (one decision dict per block) — collect all.
+    2. Single ```json block wrapping a JSON array of N decisions.
+    3. Single ```json block wrapping a single dict (wrap into 1-element list).
+    Falls back to parsing the whole body, then to counting engram files
+    if nothing parses at all.
+    """
     results = {"approved": 0, "rejected": 0, "modified": 0, "decisions": []}
 
-    # Try to find JSON block in output
+    decisions: list = []
+    parsed_any = False
+
     try:
-        # Look for ```json ... ``` block
         import re
-        json_match = re.search(r"```json\s*\n(.*?)\n\s*```", output, re.DOTALL)
-        if json_match:
-            decisions = json.loads(json_match.group(1))
+
+        matches = re.findall(r"```json\s*\n(.*?)\n\s*```", output, re.DOTALL)
+
+        if len(matches) > 1:
+            # Multiple fenced json blocks — parse each independently so one
+            # malformed block does not nuke the rest.
+            for block in matches:
+                try:
+                    parsed = json.loads(block)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    decisions.append(parsed)
+                    parsed_any = True
+                elif isinstance(parsed, list):
+                    decisions.extend(parsed)
+                    parsed_any = True
+        elif len(matches) == 1:
+            # Single fenced block — could be array or single dict.
+            parsed = json.loads(matches[0])
+            if isinstance(parsed, list):
+                decisions = parsed
+            elif isinstance(parsed, dict):
+                decisions = [parsed]
+            parsed_any = True
         else:
-            # Try parsing the whole output as JSON
-            decisions = json.loads(output)
+            # No fenced blocks — try parsing the whole output as JSON.
+            parsed = json.loads(output)
+            if isinstance(parsed, list):
+                decisions = parsed
+            elif isinstance(parsed, dict):
+                decisions = [parsed]
+            parsed_any = True
+
+        if not parsed_any:
+            # All blocks failed to parse individually — trip outer fallback.
+            raise json.JSONDecodeError("no parseable json blocks", output, 0)
 
         if isinstance(decisions, list):
             for d in decisions:
+                if not isinstance(d, dict):
+                    continue
                 decision = d.get("decision", "REJECTED").upper()
                 if decision == "APPROVED":
                     results["approved"] += 1
