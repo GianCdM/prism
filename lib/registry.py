@@ -517,18 +517,18 @@ def cmd_registry_create() -> None:
      mkdir -p skills
      cp ci/gitlab-ci.yml .gitlab-ci.yml
 
-  3. Install and deploy the Worker:
+  3. Update wrangler.toml:
+     - Set GIT_PROVIDER = "gitlab"
+     - Set GITLAB_HOST, GITLAB_PROJECT_ID, GITLAB_BRANCH
+
+  4. Install and deploy the Worker:
      cd worker && npm install && npm run deploy
 
-  4. Set Worker secrets:
+  5. Set Worker secrets:
      npx wrangler secret put GITLAB_TOKEN
      (paste your GitLab Personal Access Token with 'api' scope)
      npx wrangler secret put REGISTRY_TOKENS
      (paste: {generated_token})
-
-  5. Update wrangler.toml:
-     - Set GIT_PROVIDER = "gitlab"
-     - Set GITLAB_HOST, GITLAB_PROJECT_ID, GITLAB_BRANCH
 
   6. Add a project access token for CI:
      Project Settings -> Access Tokens -> create token with `write_repository`
