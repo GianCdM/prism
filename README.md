@@ -12,7 +12,7 @@ A knowledge layer for Claude Code adn Cursor. Prism watches how you work, learns
 
 ## Get started
 
-This walkthrough takes you from install to your first extracted knowledge. Follow steps in order — each has a check so you know it worked.
+This walkthrough takes you from install to your first extracted knowledge using Claude Code, same applies for Cursor. Follow steps in order — each has a check so you know it worked.
 
 ### 1. Install
 
@@ -135,11 +135,11 @@ prism promote <engram-id>      # promote a well-validated engram to a publishabl
 
 ## How it works
 
-Prism has two channels for getting knowledge into Claude Code:
+Prism has two channels for getting knowledge into Claude Code or Cursor:
 
-**Push** — `.claude/prism.md` is auto-generated with your highest-priority knowledge (corrections, pinned items, top preferences). Claude Code reads this at session start.
+**Push** — `.claude/prism.md` and `.cursor/rules/prism.md` are auto-generated with your highest-priority knowledge (corrections, pinned items, top preferences). Claude Code and Cursor read this at session start.
 
-**Pull** — An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. Claude queries these mid-session when it needs specific knowledge.
+**Pull** — An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. Claude and Cursor queries these mid-session when they need specific knowledge.
 
 Engrams have a lifecycle: they start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically to keep things fresh.
 
