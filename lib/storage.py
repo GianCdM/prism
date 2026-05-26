@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import PRISM_HOME
-from .schema import SCHEMA_SQL
+from .schema import SCHEMA_SQL, MIGRATION_V2
 
 DB_PATH = PRISM_HOME / "prism.db"
 
@@ -55,12 +55,24 @@ def _active_count_sql(*, for_triggers: bool) -> tuple[str, tuple]:
     return ("project_id = ? AND extracted_at IS NULL", ())
 
 
+def _migrate_db(conn: sqlite3.Connection) -> None:
+    """Apply any pending schema migrations. Called once per connection."""
+    version = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_version"
+    ).fetchone()[0]
+    if version < 2:
+        conn.executescript(MIGRATION_V2)
+        conn.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (2)")
+        conn.commit()
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA synchronous = NORMAL")
+    _migrate_db(conn)
     return conn
 
 
@@ -68,10 +80,9 @@ def init_db(db_path: Path | None = None) -> None:
     """Create schema if not present. Safe to call multiple times."""
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = _connect(path)
     try:
         conn.executescript(SCHEMA_SQL)
-        conn.commit()
     finally:
         conn.close()
 
@@ -86,10 +97,9 @@ def insert_observation(
     insight_type: str | None = None,
     evidence: str | None = None,
     db_path: Path | None = None,
+    intensity: str = "lite",
 ) -> tuple[int, int, int]:
     """Insert one observation (input_summary should already be scrubbed/compressed).
-
-    Sets compressed=1 / intensity='lite' for rows prepared via prepare_input_summary.
 
     Returns (row_id, backlog_count, trigger_count) from a single transaction.
     ``trigger_count`` excludes ``session_insight`` rows (for hook thresholds).
@@ -108,7 +118,7 @@ def insert_observation(
                    (session_id, project_id, event, tool, source,
                     input_summary, compressed, intensity,
                     insight_type, evidence, ts)
-                   VALUES (?, ?, ?, ?, ?, ?, 1, 'lite', ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
                 (
                     session_id or "unknown",
                     project_id,
@@ -116,6 +126,7 @@ def insert_observation(
                     tool,
                     source,
                     input_summary,
+                    intensity,
                     insight_type,
                     evidence,
                     ts,
@@ -146,7 +157,7 @@ def insert_observations_batch(
     """Insert multiple observations in a single transaction. Returns inserted count.
 
     Each dict must have: session_id, project_id, event, tool, source, input_summary.
-    Optional: ts, timestamp (ISO-8601), insight_type, evidence.
+    Optional: ts, timestamp (ISO-8601), intensity, insight_type, evidence.
     """
     if not observations:
         return 0
@@ -168,6 +179,7 @@ def insert_observations_batch(
                     obs.get("tool", ""),
                     obs.get("source", "unknown"),
                     obs.get("input_summary", ""),
+                    obs.get("intensity", "lite"),
                     obs.get("insight_type"),
                     obs.get("evidence"),
                     row_ts,
@@ -184,7 +196,7 @@ def insert_observations_batch(
                    (session_id, project_id, event, tool, source,
                     input_summary, compressed, intensity,
                     insight_type, evidence, ts)
-                   VALUES (?, ?, ?, ?, ?, ?, 1, 'lite', ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
                 rows,
             )
         return len(observations)

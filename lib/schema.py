@@ -45,10 +45,23 @@ END;
 CREATE TRIGGER IF NOT EXISTS obs_ad AFTER DELETE ON observations BEGIN
   INSERT INTO observations_fts(observations_fts, rowid, input_summary) VALUES('delete', old.id, old.input_summary);
 END;
-CREATE TRIGGER IF NOT EXISTS obs_au AFTER UPDATE ON observations BEGIN
+DROP TRIGGER IF EXISTS obs_au;
+CREATE TRIGGER obs_au AFTER UPDATE ON observations
+WHEN old.input_summary != new.input_summary BEGIN
   INSERT INTO observations_fts(observations_fts, rowid, input_summary) VALUES('delete', old.id, old.input_summary);
   INSERT INTO observations_fts(rowid, input_summary) VALUES (new.id, new.input_summary);
 END;
 
 INSERT OR IGNORE INTO schema_version(version) VALUES (1);
+INSERT OR IGNORE INTO schema_version(version) VALUES (2);
+"""
+
+# Migration SQL applied to existing databases by _migrate_db() in storage.py.
+MIGRATION_V2 = """
+DROP TRIGGER IF EXISTS obs_au;
+CREATE TRIGGER obs_au AFTER UPDATE ON observations
+WHEN old.input_summary != new.input_summary BEGIN
+  INSERT INTO observations_fts(observations_fts, rowid, input_summary) VALUES('delete', old.id, old.input_summary);
+  INSERT INTO observations_fts(rowid, input_summary) VALUES (new.id, new.input_summary);
+END;
 """

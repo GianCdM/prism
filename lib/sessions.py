@@ -24,6 +24,8 @@ CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 CURSOR_PROJECTS_DIR = Path.home() / ".cursor" / "projects"
 TRACKER_PATH = PRISM_HOME / "analyzed-sessions.json"
 
+_TRACKER_TTL_SECONDS = 30 * 24 * 60 * 60  # matches purge_old default
+
 # Heuristic: user text that looks like a correction or preference
 # Matched as whole words, any position.
 import re as _re
@@ -37,6 +39,15 @@ _CORRECTION_RE = _re.compile(
     r"\b(" + "|".join(_re.escape(k) for k in _CORRECTION_KEYWORDS) + r")\b",
     _re.IGNORECASE,
 )
+
+
+_USER_QUERY_RE = _re.compile(r"<user_query>\s*([\s\S]*?)\s*</user_query>", _re.IGNORECASE)
+
+
+def _unwrap_user_query(text: str) -> str:
+    """Strip Cursor's <user_query>…</user_query> wrapper, if present."""
+    m = _USER_QUERY_RE.search(text)
+    return m.group(1) if m else text
 
 
 def is_correction_like(text: str) -> bool:
@@ -75,15 +86,34 @@ def resolve_project_id_from_cwd(cwd: str, cache: dict) -> str:
     return project_id
 
 
+def _parse_analyzed_at(value: str) -> float:
+    """Return Unix timestamp for an analyzed_at ISO string, or 0.0 on failure."""
+    try:
+        iso = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (ValueError, AttributeError):
+        return 0.0
+
+
 def _load_tracker() -> dict:
-    """Load the analyzed-sessions tracker."""
+    """Load the analyzed-sessions tracker, evicting entries older than TTL."""
+    data: dict = {}
     if TRACKER_PATH.exists():
         try:
             with open(TRACKER_PATH) as f:
-                return json.load(f)
+                data = json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
-    return {"sessions": {}}
+    cutoff = datetime.now(timezone.utc).timestamp() - _TRACKER_TTL_SECONDS
+    sessions = {
+        sid: entry
+        for sid, entry in data.get("sessions", {}).items()
+        if _parse_analyzed_at(entry.get("analyzed_at", "")) >= cutoff
+    }
+    return {"sessions": sessions}
 
 
 def _save_tracker(tracker: dict) -> None:
@@ -198,8 +228,10 @@ def list_cursor_sessions(
     """List available Cursor IDE sessions with metadata.
 
     Cursor stores transcripts under
-    ~/.cursor/projects/<sanitized-path>/agent-transcripts/<id>.jsonl.
-    The cwd is reconstructed from the sanitized folder name.
+    ~/.cursor/projects/<sanitized-path>/agent-transcripts/<id>/<id>.jsonl
+    (one extra nesting level vs what the old code assumed).
+    CWD is read from the session file when available; the raw folder name
+    is kept as a fallback identifier (not converted to a path).
     """
     if not CURSOR_PROJECTS_DIR.exists():
         return []
@@ -213,15 +245,18 @@ def list_cursor_sessions(
         transcripts_dir = folder / "agent-transcripts"
         if not transcripts_dir.is_dir():
             continue
-        for jsonl_file in transcripts_dir.glob("*.jsonl"):
+        for jsonl_file in transcripts_dir.glob("*/*.jsonl"):
             session_id = jsonl_file.stem
             size = jsonl_file.stat().st_size
             if size == 0:
                 continue
 
-            # Cursor folder names are project paths sanitized with non-alphanumerics
-            # replaced by hyphens and leading hyphens trimmed. Reconstruct a cwd.
-            cwd = "/" + folder.name.replace("-", "/").lstrip("/")
+            # Try to extract cwd from the session file (most reliable).
+            # Cursor folder names are sanitized with hyphens replacing all
+            # non-alphanumerics — the reverse is ambiguous (a hyphen could
+            # be a slash, dot, space, or literal hyphen), so we never attempt
+            # to reconstruct a path from the folder name.
+            cwd = _extract_cwd(jsonl_file) or folder.name
             pid = resolve_project_id_from_cwd(cwd, cwd_cache) if cwd else "global"
 
             if project_filter and pid != project_filter:
@@ -327,7 +362,8 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
             except json.JSONDecodeError:
                 continue
 
-            msg_type = msg.get("type")
+            # Claude Code uses "type"; Cursor uses "role". Accept both.
+            msg_type = msg.get("type") or msg.get("role")
             timestamp = msg.get("timestamp", "")
             cwd = msg.get("cwd", "")
             sid = msg.get("sessionId", session_id)
@@ -427,7 +463,7 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
                             )
 
                         elif block.get("type") == "text":
-                            text = block.get("text", "")
+                            text = _unwrap_user_query(block.get("text", ""))
                             if is_correction_like(text):
                                 _append_observation(
                                     observations,
@@ -440,10 +476,10 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
                                     source="session_import",
                                 )
 
-                elif isinstance(content, str) and is_correction_like(content):
+                elif isinstance(content, str) and is_correction_like(_unwrap_user_query(content)):
                     _append_observation(
                         observations,
-                        raw_summary=content,
+                        raw_summary=_unwrap_user_query(content),
                         timestamp=timestamp,
                         event="user_guidance",
                         tool="user",

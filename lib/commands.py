@@ -28,6 +28,7 @@ from .index import (
     update_confidence,
 )
 from .frontmatter import update_frontmatter
+from .scrub import scrub_text, is_blocked_text
 from .project import (
     cached_project_id_path,
     capture_hook_command,
@@ -466,6 +467,11 @@ def cmd_status(project_id: Optional[str] = None) -> None:
 
 def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
     """Manually teach a fact or preference. Creates with confidence 0.9."""
+    text = scrub_text(text)
+    if is_blocked_text(text):
+        print("Error: input matched a block pattern and was not saved.")
+        return
+
     if not project_id:
         project_id = detect_project_id()
     ensure_dirs(project_id)
@@ -663,6 +669,11 @@ def cmd_maintain(quiet: bool = False) -> None:
     # Pass 2: decay active engrams, archive those that cross archive_threshold
     index = load_index()
     today = date.today()
+
+    if index.get("last_maintained") == today.isoformat():
+        log("Maintenance already ran today — skipping decay pass.")
+        return
+
     decayed = 0
     archived = 0
     to_archive_ids = set()
@@ -703,9 +714,9 @@ def cmd_maintain(quiet: bool = False) -> None:
                 update_frontmatter(source_path, {"confidence": new_conf})
             decayed += 1
 
-    if to_archive_ids or decayed > 0:
-        index["engrams"] = [e for e in index["engrams"] if e["id"] not in to_archive_ids]
-        save_index(index)
+    index["last_maintained"] = today.isoformat()
+    index["engrams"] = [e for e in index["engrams"] if e["id"] not in to_archive_ids]
+    save_index(index)
 
     log(f"Maintenance complete: {decayed} decayed, {archived} archived, {deleted} deleted")
 

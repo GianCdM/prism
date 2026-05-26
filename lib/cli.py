@@ -78,6 +78,11 @@ def main() -> None:
     p_uninstall.add_argument("--project", help="Override project ID")
     p_uninstall.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
 
+    # sync
+    p_sync = subparsers.add_parser("sync", help="Regenerate .claude/prism.md from active engrams")
+    p_sync.add_argument("--project", help="Override project ID")
+    p_sync.add_argument("--quiet", action="store_true", help="Suppress output")
+
     # maintain
     p_maintain = subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
     p_maintain.add_argument("--quiet", action="store_true", help="Suppress output (for hooks)")
@@ -239,6 +244,14 @@ def main() -> None:
         from .commands import cmd_uninstall
         cmd_uninstall(project_id=args.project, yes=args.yes)
 
+    elif args.command == "sync":
+        from .sync import sync_claude_code
+        from .project import detect_project_id
+        project_id = args.project or detect_project_id()
+        sync_claude_code(project_id)
+        if not getattr(args, "quiet", False):
+            print(f"Synced context for project {project_id}")
+
     elif args.command == "maintain":
         from .commands import cmd_maintain
         cmd_maintain(quiet=getattr(args, "quiet", False))
@@ -269,7 +282,7 @@ def main() -> None:
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "disable", "enable", "uninstall", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction

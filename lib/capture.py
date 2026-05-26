@@ -109,8 +109,13 @@ def _prepare_input_summary(text: str) -> str | None:
             r"ghp_[a-zA-Z0-9]{36}",
         ]
         block_patterns = [
+            r"(?i)expand\s+access",
+            r"(?i)grant\s+permissions",
             r"(?i)ignore\s+safety",
+            r"(?i)skip\s+validation",
             r"(?i)bypass\s+checks",
+            r"(?i)modify\s+prism\s+system",
+            r"(?i)change\s+constitution",
             r"(?i)ignore\s+previous",
             r"(?i)disregard\s+rules",
         ]

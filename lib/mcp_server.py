@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.config import PRISM_HOME, get_config, get_engrams_dir, ensure_dirs
+from lib.scrub import scrub_text, is_blocked_text
 from lib.index import (
     add_entry,
     build_index_entry,
@@ -144,6 +145,11 @@ def _record(text, kind="preference", project_id=None, scope="project"):
     """Record a new entry mid-session (like 'prism learn')."""
     if kind not in VALID_KINDS:
         return {"id": "", "status": "error", "message": f"Invalid kind: {kind}"}
+
+    # Scrub secrets and reject adversarial content — same pipeline as capture.py.
+    text = scrub_text(text)
+    if is_blocked_text(text):
+        return {"id": "", "status": "blocked", "message": "Input matched a block pattern."}
 
     if not project_id:
         project_id = os.environ.get("PRISM_PROJECT_ID", "global")
