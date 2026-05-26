@@ -62,6 +62,11 @@ for pyfile in "$PRISM_REPO"/lib/*.py; do
     esac
     cp "$pyfile" "$PRISM_HOME/lib/"
 done
+# Copy lib data files (e.g. lexicon.json loaded at runtime by lexicon.py)
+for datafile in "$PRISM_REPO"/lib/*.json; do
+    [ -f "$datafile" ] || continue
+    cp "$datafile" "$PRISM_HOME/lib/"
+done
 
 # 4b. Copy slash command skills (overwrite on upgrade)
 if [ -d "$PRISM_REPO/skills" ]; then
@@ -101,6 +106,7 @@ if [ ! -f "$PRISM_HOME/config.json" ]; then
 {
   "extract_threshold": 15,
   "review_interval": 5,
+  "review_cooldown_seconds": 1800,
   "review_timeout": 60,
   "decay_rate_per_week": 0.02,
   "archive_threshold": 0.2,

@@ -100,7 +100,7 @@
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
-## Slash Commands (13 total)
+## Slash Commands (12 total)
 
 | Command | Description |
 |---------|-------------|
@@ -114,7 +114,6 @@
 | `/publish-skills` | Publish to registry with delta tracking |
 | `/advise-skills` | Query registry for skills matching a question |
 | `/audit-code` | Surface registry skills relevant to current codebase |
-| `/find-vulnerabilities` | Security-focused codebase audit |
 | `/run-analysis-pipeline` | Orchestrated: analyze → extract → curate → publish |
 | `/run-history-pipeline` | Orchestrated: mine-history → synthesize → publish |
 <!-- GSD:skills-end -->

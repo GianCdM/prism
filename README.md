@@ -4,6 +4,20 @@ A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns
 
 **One install. Zero config for personal use. Registry config for teams.**
 
+## Important - Upgrading from before 26 May 2026
+
+Prism switched its observation storage from JSONL to SQLite. If you installed before this date, run the following once to migrate your data:
+
+```bash
+cd ~/Documents/prism          # your prism clone
+git pull
+python3 migrate_observations.py
+./install.sh
+```
+
+Then re-run `prism init` in each project you use Prism with.
+Your engrams are unaffected. The migration archives your old `.jsonl` files under `~/.prism/projects/` and imports them into `~/.prism/prism.db`.
+
 ## What it does
 
 **Personal learning** — Prism observes your sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
@@ -143,6 +157,8 @@ Prism has two channels for getting knowledge into Claude Code or Cursor:
 
 Engrams have a lifecycle: they start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically to keep things fresh.
 
+**Observation compression** — before any observation reaches the database, it goes through a compression pass that strips fillers, hedges, pleasantries, and articles from prose while leaving code blocks, file paths, URLs, commands, identifiers, version numbers, and dates completely unchanged. This reduces storage noise and keeps the context fed into the extraction pipeline tighter. All observations are stored at `intensity='lite'` by default. The compression logic is a modified version of [Cavemem](https://github.com/JuliusBrussee/cavemem)'s approach.
+
 ## Configuration
 
 ```bash
@@ -157,8 +173,9 @@ Key settings: `extract_threshold` (observations before auto-extraction), `decay_
 ```
 ~/.prism/
   config.json          # Settings
+  prism.db             # SQLite database — all observations + FTS5 index (shared across projects)
   global/engrams/      # Cross-project knowledge
-  projects/<hash>/     # Per-project observations + knowledge
+  projects/<hash>/     # Per-project engrams
   lib/                 # Python library
   hooks/               # Claude Code hooks
   agents/              # AI agent prompts (extractor, validator, reviewer)

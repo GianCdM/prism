@@ -78,6 +78,11 @@ def main() -> None:
     p_uninstall.add_argument("--project", help="Override project ID")
     p_uninstall.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
 
+    # sync
+    p_sync = subparsers.add_parser("sync", help="Regenerate .claude/prism.md from active engrams")
+    p_sync.add_argument("--project", help="Override project ID")
+    p_sync.add_argument("--quiet", action="store_true", help="Suppress output")
+
     # maintain
     p_maintain = subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
     p_maintain.add_argument("--quiet", action="store_true", help="Suppress output (for hooks)")
@@ -239,6 +244,14 @@ def main() -> None:
         from .commands import cmd_uninstall
         cmd_uninstall(project_id=args.project, yes=args.yes)
 
+    elif args.command == "sync":
+        from .sync import sync_claude_code
+        from .project import detect_project_id
+        project_id = args.project or detect_project_id()
+        sync_claude_code(project_id)
+        if not getattr(args, "quiet", False):
+            print(f"Synced context for project {project_id}")
+
     elif args.command == "maintain":
         from .commands import cmd_maintain
         cmd_maintain(quiet=getattr(args, "quiet", False))
@@ -269,7 +282,7 @@ def main() -> None:
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "disable", "enable", "uninstall", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction
@@ -280,39 +293,41 @@ def main() -> None:
 
 
 def _cmd_query_sessions(args, project_id: str) -> None:
-    """Search session content via SQLite FTS5."""
-    from .sessions import list_all_sessions, list_cursor_sessions, list_sessions
+    """Search observations via SQLite FTS5."""
+    from datetime import datetime
     from .search import search_sessions
 
-    list_func = {
-        "claude": list_sessions,
-        "cursor": list_cursor_sessions,
-        "all": list_all_sessions,
-    }.get(args.source, list_all_sessions)
+    ts_from = None
+    if args.since:
+        try:
+            ts_from = int(datetime.strptime(args.since, "%Y-%m-%d").timestamp())
+        except ValueError:
+            print(f"Invalid --since date: {args.since!r}. Expected YYYY-MM-DD.")
+            return
 
-    sessions = list_func(
-        project_filter=None if args.all_projects else project_id,
-        since_date=args.since,
-        last_n=args.last,
+    limit = args.last if args.last else 10
+    scope_parts = []
+    if args.since:
+        scope_parts.append(f"since {args.since}")
+    if args.last:
+        scope_parts.append(f"limit {args.last}")
+    scope = f" ({', '.join(scope_parts)})" if scope_parts else ""
+    print(f"Searching observations{scope} for: {args.query!r}\n")
+
+    results = search_sessions(
+        args.query,
+        project_id=None if args.all_projects else project_id,
+        limit=limit,
+        ts_from=ts_from,
     )
-
-    if not sessions:
-        print("No sessions found for this project.")
-        return
-
-    n = len(sessions)
-    scope = f"last {n}" if args.last else str(n)
-    print(f"Searching {scope} sessions for: {args.query!r}\n")
-
-    results = search_sessions(sessions, args.query, project_id)
 
     if not results:
         print("No matches found.")
         return
 
     for i, r in enumerate(results, 1):
-        name = os.path.basename(r["cwd"].rstrip("/")) if r["cwd"] else r["session_id"][:8]
-        print(f"{i}. {r['date']}  {name}  ({r['session_id'][:8]}...)")
+        ts_str = datetime.fromtimestamp(r["ts"]).strftime("%Y-%m-%d %H:%M")
+        print(f"{i}. obs:{r['id']}  session:{r['session_id'][:12]}  {ts_str}")
         print(f"   {r['snippet']}\n")
 
 
