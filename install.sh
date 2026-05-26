@@ -62,6 +62,11 @@ for pyfile in "$PRISM_REPO"/lib/*.py; do
     esac
     cp "$pyfile" "$PRISM_HOME/lib/"
 done
+# Copy lib data files (e.g. lexicon.json loaded at runtime by lexicon.py)
+for datafile in "$PRISM_REPO"/lib/*.json; do
+    [ -f "$datafile" ] || continue
+    cp "$datafile" "$PRISM_HOME/lib/"
+done
 
 # 4b. Copy slash command skills (overwrite on upgrade)
 if [ -d "$PRISM_REPO/skills" ]; then

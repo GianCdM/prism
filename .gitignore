@@ -2,6 +2,6 @@
 .cursor/
 .planning/
 DEBUG_REPORT.md
-__pycache__/
+*/__pycache__/
 *.pyc
 *.pyo
