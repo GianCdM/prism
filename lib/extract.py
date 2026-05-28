@@ -229,7 +229,8 @@ No output text. Write files only.
                 cwd=str(PRISM_HOME),
             )
             if result.returncode != 0:
-                msg = result.stderr[:500]
+                parts = [p.strip() for p in (result.stdout, result.stderr) if p and p.strip()]
+                msg = " | ".join(parts)[:500]
                 print(f"Extraction failed: {msg}")
                 _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
                 _clear_batch_ids(project_id)
@@ -315,7 +316,8 @@ Exactly {n_candidates} elements — one per candidate, no omissions.
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
-            msg = result.stderr[:500]
+            parts = [p.strip() for p in (result.stdout, result.stderr) if p and p.strip()]
+            msg = " | ".join(parts)[:500]
             print(f"Validation failed: {msg}")
             _log_extract_error(stage="sonnet_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
             return {"approved": 0, "rejected": 0, "modified": 0}
