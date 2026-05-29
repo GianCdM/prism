@@ -288,6 +288,7 @@ def collect_mcp_calls(conn: sqlite3.Connection) -> int:
                 "prism_relevant": "relevant_hit",
                 "prism_get": "get_hit",
                 "prism_record": "record_create",
+                "hook_retrieve": "retrieve_hit",
             }
             event_type = event_type_map.get(tool_name, "unknown")
             for engram_id in engrams_returned:

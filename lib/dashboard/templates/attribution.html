@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Attribution{% endblock %}
 {% block content %}
-<h1>Atribuição — Push / Pull / Dormante</h1>
-<p class="muted">Como o conhecimento chega (ou não) ao Claude. <strong>Push</strong> = injetado no <code>prism.md</code> toda sessão · <strong>Pull</strong> = buscado via MCP · <strong>Dormante</strong> = nunca alcançado por nenhum canal.</p>
+<h1>Atribuição — Push / Pull / Hook / Dormante</h1>
+<p class="muted">Como o conhecimento chega (ou não) ao Claude. <strong>Push</strong> = injetado no <code>prism.md</code> toda sessão · <strong>Pull</strong> = buscado via MCP · <strong>Pull via hook</strong> = surfaceado automaticamente pelo hook <code>UserPromptSubmit</code> por relevância ao prompt · <strong>Dormante</strong> = nunca alcançado por nenhum canal.</p>
 
 <div class="cards">
   <div class="card has-tooltip" data-tooltip="Engrams injetados no prism.md (push layer) toda sessão.&#10;'Influência' = quantos desses aparecem no teu trabalho (observation_match).">
@@ -14,6 +14,11 @@
     <div class="card-label">Pull — MCP</div>
     <div class="card-value {% if c.pull_pct >= 20 %}yellow{% else %}red{% endif %}">{{ c.pull_n }}</div>
     <div class="card-sub">coverage {{ c.coverage_pct }}% ({{ c.with_search }}/{{ c.total_sessions }} sessões)</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Engrams surfaceados automaticamente pelo hook UserPromptSubmit (retrieve_hit), por relevância ao teu prompt — sem depender do modelo chamar prism_search.&#10;'dormentes resgatados' = engrams que NÃO estão no push nem no pull-MCP; só o hook alcançou.">
+    <div class="card-label">Pull via hook</div>
+    <div class="card-value {% if c.hook_n > 0 %}green{% else %}red{% endif %}">{{ c.hook_n }}</div>
+    <div class="card-sub">{{ c.hook_only_n }} dormentes resgatados · coverage {{ c.hook_coverage_pct }}% ({{ c.hook_sessions }}/{{ c.total_sessions }})</div>
   </div>
   <div class="card has-tooltip" data-tooltip="Engrams que NUNCA foram empurrados nem buscados — não alcançam o Claude por nenhum canal. Existem na base mas são peso morto.">
     <div class="card-label">Dormante</div>
@@ -70,10 +75,10 @@
 new Chart(document.getElementById('channels-chart'), {
   type: 'doughnut',
   data: {
-    labels: ['Push (entregue)', 'Pull-only (MCP)', 'Dormante'],
+    labels: ['Push (entregue)', 'Pull-only (MCP)', 'Pull via hook', 'Dormante'],
     datasets: [{
-      data: [{{ c.push_n }}, {{ c.pull_only_n }}, {{ c.dormant_n }}],
-      backgroundColor: ['#4ade80', '#7b8cff', '#3a3f4d'],
+      data: [{{ c.push_n }}, {{ c.pull_only_n }}, {{ c.hook_only_n }}, {{ c.dormant_n }}],
+      backgroundColor: ['#4ade80', '#7b8cff', '#22d3ee', '#3a3f4d'],
       borderColor: '#1a1d27', borderWidth: 2,
     }],
   },

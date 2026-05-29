@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 MIN_PROMPT_CHARS = 15   # skip terse prompts ("ok", "vai", "continua")
@@ -49,7 +50,32 @@ def _tokenize(text):
     }
 
 
+def _log_retrieve(prism_home, session_id, prompt, engram_ids, duration_ms):
+    """Best-effort telemetry for the dashboard (mirrors mcp_server._log_mcp_call).
+
+    Emits a `hook_retrieve` record into metrics.jsonl so the collector can
+    attribute a `retrieve_hit` channel (the dormant engrams this hook surfaced).
+    Never raises — telemetry must never affect the hook.
+    """
+    try:
+        from datetime import datetime, timezone
+        rec = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": session_id,
+            "tool": "hook_retrieve",
+            "params": {"prompt_chars": len(prompt)},
+            "result_count": len(engram_ids),
+            "engrams_returned": engram_ids,
+            "duration_ms": duration_ms,
+        }
+        with (prism_home / "metrics.jsonl").open("a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def main():
+    t0 = time.time()
     raw = sys.stdin.read()
     if not raw.strip():
         return
@@ -61,6 +87,7 @@ def main():
     prompt = (data.get("prompt") or "").strip()
     if len(prompt) < MIN_PROMPT_CHARS:
         return
+    session_id = data.get("session_id")
 
     prism_home = Path(os.environ.get("PRISM_HOME", os.path.expanduser("~/.prism")))
     try:
@@ -93,6 +120,9 @@ def main():
         return
     scored.sort(key=lambda x: -x[0])
     top = scored[:MAX_RESULTS]
+
+    _log_retrieve(prism_home, session_id, prompt,
+                  [e.get("id") for _, e in top], int((time.time() - t0) * 1000))
 
     out = [
         "<prism-knowledge>",

@@ -624,15 +624,20 @@ def attribution():
         pulled = {r["engram_id"] for r in conn.execute(
             "SELECT DISTINCT engram_id FROM engram_events "
             "WHERE event_type IN ('search_hit','get_hit','relevant_hit')")}
+        hooked = {r["engram_id"] for r in conn.execute(
+            "SELECT DISTINCT engram_id FROM engram_events WHERE event_type='retrieve_hit'")}
         influenced = {r["engram_id"] for r in conn.execute(
             "SELECT DISTINCT engram_id FROM engram_events WHERE event_type='observation_match'")}
-        reached = pushed | pulled
+        reached = pushed | pulled | hooked
         dormant_n = max(0, total - len(reached))
 
         srow = conn.execute(
             "SELECT COUNT(*) c, COALESCE(SUM(has_search), 0) s FROM sessions").fetchone()
         total_sessions = srow["c"] or 0
         with_search = srow["s"] or 0
+        hook_sessions = conn.execute(
+            "SELECT COUNT(DISTINCT session_id) c FROM engram_events "
+            "WHERE event_type='retrieve_hit'").fetchone()["c"] or 0
 
         def _pct(n):
             return round(100 * n / total, 1) if total else 0
@@ -648,6 +653,10 @@ def attribution():
             "pull_only_n": len(pulled - pushed),
             "coverage_pct": round(100 * with_search / total_sessions, 1) if total_sessions else 0,
             "with_search": with_search, "total_sessions": total_sessions,
+            "hook_n": len(hooked), "hook_pct": _pct(len(hooked)),
+            "hook_only_n": len(hooked - pushed - pulled),
+            "hook_sessions": hook_sessions,
+            "hook_coverage_pct": round(100 * hook_sessions / total_sessions, 1) if total_sessions else 0,
             "dormant_n": dormant_n, "dormant_pct": _pct(dormant_n),
         }
 
