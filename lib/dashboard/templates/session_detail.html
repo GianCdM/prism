@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Session {{ session.session_id[:8] }}{% endblock %}
+{% block content %}
+<h1>Session <code>{{ session.session_id }}</code></h1>
+<p class="muted"><time datetime="{{ session.started_at }}" data-format="full">{{ session.started_at }}</time> · {{ (session.duration_sec or 0) // 60 }}m · project <code>{{ session.project_id or '?' }}</code><br>cwd <code>{{ session.cwd or '?' }}</code></p>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="Tool calls captured by Prism's PreToolUse hook (Bash, Read, Edit, etc.) in this session."><div class="card-label">Observations</div><div class="card-value">{{ session.observations_count }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Total MCP calls to Prism (prism_search, prism_relevant, prism_get, prism_record) in this session."><div class="card-label">MCP calls</div><div class="card-value">{{ session.mcp_calls_count }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Distinct engrams returned/referenced in some MCP call in this session."><div class="card-label">Engrams reinforced</div><div class="card-value">{{ session.engrams_reinforced_count }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Yes = had ≥1 prism_search or prism_relevant. No = only the push layer was used, no explicit search."><div class="card-label">Search?</div><div class="card-value {% if session.has_search %}green{% else %}red{% endif %}">{{ 'Yes' if session.has_search else 'No' }}</div></div>
+</div>
+
+<div class="panel">
+  <h2>MCP calls ({{ mcp_calls|length }})</h2>
+  {% if mcp_calls %}
+  <table>
+    <thead><tr>
+      <th class="has-tooltip" data-tooltip="When the MCP call was made.">Timestamp</th>
+      <th class="has-tooltip" data-tooltip="prism_search / prism_relevant / prism_get / prism_record">Tool</th>
+      <th class="has-tooltip" data-tooltip="Arguments passed (query, filters, id, etc.) — serialized JSON.">Params</th>
+      <th class="has-tooltip" data-tooltip="How many engrams were returned to Claude.">Results</th>
+      <th class="has-tooltip" data-tooltip="MCP call execution time (from sending the request until receiving the response).">Latency</th>
+    </tr></thead>
+    <tbody>
+    {% for c in mcp_calls %}
+    <tr>
+      <td class="muted"><time datetime="{{ c.timestamp }}" data-format="full">{{ c.timestamp[:19] }}</time></td>
+      <td><code>{{ c.tool_name }}</code></td>
+      <td class="muted">{{ c.params_json[:80] }}{% if c.params_json and c.params_json|length > 80 %}…{% endif %}</td>
+      <td>{{ c.result_count }}</td>
+      <td>{{ c.duration_ms }}ms</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No MCP calls in this session.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Engrams referenced ({{ engrams_used|length }})</h2>
+  {% if engrams_used %}
+  <table>
+    <thead><tr><th>Timestamp</th><th>Engram</th><th>Kind</th><th>Event</th></tr></thead>
+    <tbody>
+    {% for e in engrams_used %}
+    <tr>
+      <td class="muted"><time datetime="{{ e.timestamp }}" data-format="full">{{ e.timestamp[:19] }}</time></td>
+      <td>{% if e.pinned %}<span class="tag pinned" title="pinned — never decays, always in push layer">📌</span> {% endif %}<a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:50] }}{% if e.engram_id|length > 50 %}…{% endif %}</a></td>
+      <td><span class="tag {{ e.kind or '' }}">{{ e.kind or '?' }}</span></td>
+      <td><span class="tag">{{ e.event_type }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No engrams referenced.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Observations breakdown</h2>
+  {% if observations_summary %}
+  <table>
+    <thead><tr><th>Event</th><th>Tool</th><th>Count</th></tr></thead>
+    <tbody>
+    {% for o in observations_summary %}
+    <tr><td>{{ o.event_type or '?' }}</td><td><code>{{ o.tool_name or '?' }}</code></td><td>{{ o.c }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No observations in this session.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Coverage{% endblock %}
+{% block content %}
+<h1>Prism MCP Coverage</h1>
+<p class="muted">% of sessions where Claude called <code>prism_search</code> or <code>prism_relevant</code> at least once.</p>
+
+<form class="filters" method="get">
+  <label>From: <input type="date" name="start" value="{{ start or '' }}"></label>
+  <label>To: <input type="date" name="end" value="{{ end or '' }}"></label>
+  <label>Project:
+    <select name="project_id">
+      <option value="">All</option>
+      {% for p in projects %}
+      <option value="{{ p }}" {% if p == active_project %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="% of sessions where Claude called prism_search or prism_relevant ≥1×.&#10;&#10;Granularity: per session.&#10;Question: 'Did Claude USE the MCP path in this session?'&#10;&#10;Color: green ≥50% | yellow ≥20% | red <20%.">
+    <div class="card-label">Overall coverage</div>
+    <div class="card-value {% if overall_pct >= 50 %}green{% elif overall_pct >= 20 %}yellow{% else %}red{% endif %}">{{ overall_pct }}%</div>
+    <div class="card-sub">{{ with_search }} / {{ total }} sessions</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="% of push-layer engrams (top {{ max_push }} in prism.md) that received ZERO MCP hits in the last 30 days.&#10;&#10;Granularity: per engram.&#10;Question: 'How much of the initial context is wasted tokens?'&#10;&#10;High = engrams are passively loaded but never re-queried — consider unpinning or rewriting them.&#10;Low = push layer is well-curated.&#10;&#10;Caveat: MCP instrumentation is recent. Becomes meaningful after ~2 weeks of active use.&#10;&#10;Color: green <30% | yellow 30–60% | red >60%.">
+    <div class="card-label">Push waste (30d)</div>
+    <div class="card-value {% if push_waste_pct < 30 %}green{% elif push_waste_pct < 60 %}yellow{% else %}red{% endif %}">{{ push_waste_pct }}%</div>
+    <div class="card-sub">{{ push_no_hits }} / {{ push_total }} push-layer engrams unused</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="% of engrams OUTSIDE the push layer that received ≥1 MCP hit in the last 30 days.&#10;&#10;Granularity: per engram.&#10;Question: 'Is the MCP pull layer doing work, or is it decorative?'&#10;&#10;High = Claude actively discovers knowledge beyond the push layer.&#10;Low = MCP search is unused; Claude only consumes the prism.md top.&#10;&#10;Caveat: MCP instrumentation is recent. Becomes meaningful after ~2 weeks of active use.&#10;&#10;Color: green >30% | yellow 10–30% | red <10%.">
+    <div class="card-label">Pull discovery (30d)</div>
+    <div class="card-value {% if pull_discovery_pct > 30 %}green{% elif pull_discovery_pct >= 10 %}yellow{% else %}red{% endif %}">{{ pull_discovery_pct }}%</div>
+    <div class="card-sub">{{ non_push_with_hits }} / {{ non_push_total }} non-push engrams hit</div>
+  </div>
+</div>
+
+<div class="chart-container">
+  <h2>Coverage by day</h2>
+  <canvas id="coverage-chart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Distribution: MCP calls per session</h2>
+  <canvas id="histogram-chart"></canvas>
+</div>
+
+<div class="panel">
+  <h2 class="has-tooltip" data-tooltip="Engrams currently in the prism.md push layer that have not been returned by any MCP call in the last 30 days.&#10;&#10;Why this matters: these engrams cost tokens on every session boot (loaded into the system prompt) but Claude has not actively queried them. Either they are deeply internalized (good) or they are noise in the push layer (bad).&#10;&#10;Action: consider unpinning, rewriting the trigger, or letting decay archive them.">Push-layer engrams without MCP hits ({{ push_no_hits_list|length }})</h2>
+  <p class="muted">Engrams loaded into <code>prism.md</code> on every session but never returned by an MCP query in 30d.</p>
+  {% if push_no_hits_list %}
+  <table>
+    <thead><tr>
+      <th>Engram</th>
+      <th>Kind</th>
+      <th>Conf</th>
+      <th>Pinned</th>
+    </tr></thead>
+    <tbody>
+    {% for e in push_no_hits_list %}
+    <tr>
+      <td><a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:60] }}{% if e.engram_id|length > 60 %}…{% endif %}</a></td>
+      <td><span class="tag {{ e.kind or '' }}">{{ e.kind or '?' }}</span></td>
+      <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+      <td>{% if e.pinned %}<span class="tag pinned">📌</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">All push-layer engrams have been queried via MCP. 🎉</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Sessions WITHOUT search (improvement opportunity)</h2>
+  <p class="muted">{{ sessions_without_search|length }} sessions (limit 50). Engrams were not queried via MCP — Claude may be skipping search when it should not.</p>
+  {% if sessions_without_search %}
+  <table>
+    <thead><tr>
+      <th class="has-tooltip" data-tooltip="Timestamp of the first message in the transcript.">Started</th>
+      <th class="has-tooltip" data-tooltip="Hash of the git remote of the cwd. Useful to spot a specific project missing search.">Project</th>
+      <th class="has-tooltip" data-tooltip="Directory where Claude Code ran (read from the transcript).">cwd</th>
+      <th class="has-tooltip" data-tooltip="Captured observations (non-MCP tool calls). High activity + zero search = improvement opportunity.">Obs</th>
+    </tr></thead>
+    <tbody>
+    {% for s in sessions_without_search %}
+    <tr>
+      <td><a href="/sessions/{{ s.session_id }}"><time datetime="{{ s.started_at }}" data-format="short">{{ s.started_at[:16] }}</time></a></td>
+      <td>{{ s.project_id or '?' }}</td>
+      <td class="muted">{{ s.cwd[-40:] if s.cwd else '' }}</td>
+      <td>{{ s.observations_count }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">All sessions had at least 1 search. 🎉</div>
+  {% endif %}
+</div>
+
+<script>
+const daily = {{ daily | tojson }};
+new Chart(document.getElementById('coverage-chart'), {
+  type: 'bar',
+  data: {
+    // Day buckets — server groups by UTC date. Render local.
+    labels: daily.map(d => utcDateToLocal(d.d)),
+    datasets: [
+      {label: 'Without search', data: daily.map(d => d.total - d.with_search), backgroundColor: '#f87171', stack: 'a'},
+      {label: 'With search', data: daily.map(d => d.with_search), backgroundColor: '#4ade80', stack: 'a'},
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#e6e9ef' } } },
+    scales: {
+      x: { stacked: true, ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' } },
+      y: { stacked: true, ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' }, beginAtZero: true },
+    },
+  },
+});
+
+const histogram = {{ histogram | tojson }};
+new Chart(document.getElementById('histogram-chart'), {
+  type: 'bar',
+  data: {
+    labels: histogram.map(h => h.mcp_calls_count + ' calls'),
+    datasets: [{label: 'Sessions', data: histogram.map(h => h.c), backgroundColor: '#7b8cff'}],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#e6e9ef' } } },
+    scales: {
+      x: { ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' } },
+      y: { ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' }, beginAtZero: true },
+    },
+  },
+});
+</script>
+{% endblock %}

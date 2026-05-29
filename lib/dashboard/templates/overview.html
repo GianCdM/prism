@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+
+<form class="filters" method="get">
+  <label>From: <input type="date" name="start" value="{{ start or '' }}"></label>
+  <label>To: <input type="date" name="end" value="{{ end or '' }}"></label>
+  <label>Project:
+    <select name="project_id">
+      <option value="">All</option>
+      {% for p in projects %}
+      <option value="{{ p }}" {% if p == active_project %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="Total Claude Code transcripts (each .jsonl file in ~/.claude/projects/).&#10;Includes sub-agents, /clear, compactions — not just sessions 'opened by the user'.">
+    <div class="card-label">Sessions</div>
+    <div class="card-value">{{ total_sessions }}</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Tool calls captured by the Prism hook (PreToolUse).&#10;Each Bash, Read, Edit, etc. that you or Claude runs produces one observation.">
+    <div class="card-label">Observations</div>
+    <div class="card-value">{{ total_obs }}</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Instrumented calls to the Prism MCP server.&#10;Direct measure of how often Claude queries the knowledge base via prism_search, prism_relevant, prism_get, prism_record.">
+    <div class="card-label">MCP calls</div>
+    <div class="card-value">{{ total_mcp }}</div>
+    <div class="card-sub">
+      {% for b in mcp_breakdown %}{{ b.tool_name }}: {{ b.c }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="% of sessions where Claude called prism_search or prism_relevant ≥1×.&#10;Indicates how much it actually queries the knowledge base beyond the top 10 loaded at boot.">
+    <div class="card-label">Coverage (sessions with search)</div>
+    <div class="card-value {% if coverage_pct >= 50 %}green{% elif coverage_pct >= 20 %}yellow{% else %}red{% endif %}">{{ coverage_pct }}%</div>
+    <div class="card-sub">{{ sessions_with_search }} / {{ total_sessions }}</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Total engrams in the Prism index (~/.prism/index.json).&#10;Pinned: engrams marked as invariants (do not decay, always in the top 10).">
+    <div class="card-label">Engrams</div>
+    <div class="card-value">{{ engrams_count }}</div>
+    <div class="card-sub">{{ pinned_count }} pinned</div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 class="has-tooltip" data-tooltip="Key knobs from ~/.prism/config.json that shape engram lifecycle and the push layer.&#10;&#10;Custom = value differs from Prism's default.&#10;Edit with: prism config <key> <value> &nbsp;or by editing ~/.prism/config.json directly.">Prism config</h2>
+  <table class="config-table">
+    <thead><tr><th>Key</th><th>Value</th><th>Default</th><th></th><th>Description</th></tr></thead>
+    <tbody>
+      {% for c in config_view %}
+      <tr>
+        <td><code>{{ c.key }}</code></td>
+        <td><strong>{{ c.value }}</strong></td>
+        <td class="muted">{{ c.default }}</td>
+        <td>{% if c.is_custom %}<span class="tag preference">custom</span>{% else %}<span class="tag">default</span>{% endif %}</td>
+        <td class="muted">{{ c.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="chart-container">
+  <h2>Last 48h (by hour)</h2>
+  <canvas id="hourly-chart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Activity by day</h2>
+  <canvas id="timeline-chart"></canvas>
+</div>
+
+<div class="panel-grid-3">
+  <div class="panel">
+    <h2 class="has-tooltip" data-tooltip="Engrams currently in the prism.md push layer — loaded into the initial context of every Claude Code session.&#10;&#10;Selection (replicates Prism's logic):&#10;  1. Pinned (always)&#10;  2. Corrections with conf ≥ 0.8&#10;  3. Top N by confidence&#10;Cap controlled by max_push_items in config.">Engrams in prism.md push layer</h2>
+    <p class="muted">{{ top_engrams|length }} engrams loaded on every session boot</p>
+    {% if top_engrams %}
+    <table>
+      <thead><tr><th>Engram</th><th>Kind</th><th>Conf</th><th>MCP hits</th></tr></thead>
+      <tbody>
+      {% for e in top_engrams %}
+      <tr>
+        <td>{% if e.pinned %}<span class="tag pinned" title="pinned — never decays, always in push layer">📌</span> {% endif %}<a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:40] }}{% if e.engram_id|length > 40 %}…{% endif %}</a></td>
+        <td><span class="tag {{ e.kind }}">{{ e.kind or '?' }}</span></td>
+        <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+        <td><strong>{{ e.hits }}</strong></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No engrams in the push layer.</div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 class="has-tooltip" data-tooltip="Engrams most ACTIVELY queried by Claude via MCP in the last 30 days.&#10;&#10;Counts hits from prism_search, prism_relevant, prism_get.&#10;&#10;Different from the prism.md top (which is what Claude sees passively at boot).&#10;&#10;Query cap: 10.">Top engrams by MCP hits (30d)</h2>
+    <p class="muted">{{ top_by_hits|length }} engrams with hits (cap: 10)</p>
+    {% if top_by_hits %}
+    <table>
+      <thead><tr><th>Engram</th><th>Kind</th><th>Conf</th><th>Hits</th></tr></thead>
+      <tbody>
+      {% for e in top_by_hits %}
+      <tr>
+        <td>{% if e.pinned %}<span class="tag pinned" title="pinned — never decays, always in push layer">📌</span> {% endif %}<a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:40] }}{% if e.engram_id|length > 40 %}…{% endif %}</a></td>
+        <td><span class="tag {{ e.kind }}">{{ e.kind or '?' }}</span></td>
+        <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+        <td><strong>{{ e.hits }}</strong></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No data yet — Claude has not queried engrams via MCP in the last 30d.</div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>Recent sessions</h2>
+    {% if recent_sessions %}
+    <table>
+      <thead><tr><th>Started</th><th>Dur</th><th>Obs</th><th>MCP</th><th>Search?</th></tr></thead>
+      <tbody>
+      {% for s in recent_sessions %}
+      <tr class="has-tooltip" data-tooltip="session_id: {{ s.session_id }}&#10;project: {{ s.project_id or '?' }}&#10;cwd: {{ s.cwd or '?' }}&#10;started (UTC): {{ s.started_at }}&#10;{{ s.observations_count }} observations · {{ s.mcp_calls_count }} MCP calls · {{ s.engrams_reinforced_count }} engrams referenced">
+        <td><a href="/sessions/{{ s.session_id }}"><time datetime="{{ s.started_at }}" data-format="short">{{ s.started_at[:16] }}</time></a></td>
+        <td>{{ (s.duration_sec or 0) // 60 }}m</td>
+        <td>{{ s.observations_count }}</td>
+        <td>{{ s.mcp_calls_count }}</td>
+        <td>{% if s.has_search %}<span class="tag global">✓</span>{% else %}<span class="tag">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No sessions collected.</div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const hourly = {{ hourly_48h | tojson }};
+new Chart(document.getElementById('hourly-chart'), {
+  type: 'bar',
+  data: {
+    // UTC hour buckets converted to local "MM-DD HH:00"
+    labels: hourly.map(h => utcHourToLocal(h.h)),
+    datasets: [
+      // order: lower draws first (behind), higher draws last (in front).
+      // Bars stay in the back so the MCP calls line is always visible on top.
+      {label: 'Sessions', data: hourly.map(h => h.sessions), backgroundColor: '#7b8cff', stack: 'a', yAxisID: 'y', order: 2},
+      {label: 'MCP calls', data: hourly.map(h => h.mcp_calls), backgroundColor: '#4ade80', type: 'line', tension: 0.2, borderColor: '#4ade80', yAxisID: 'y1', pointRadius: 3, order: 0},
+      {label: 'Observations', data: hourly.map(h => h.observations), backgroundColor: '#fbbf24', type: 'line', tension: 0.2, borderColor: '#fbbf24', yAxisID: 'y1', pointRadius: 3, hidden: true, order: 1},
+    ],
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { labels: { color: '#e6e9ef' } } },
+    scales: {
+      x: { ticks: { color: '#8a93a6', maxRotation: 60, minRotation: 60 }, grid: { color: '#2a2f3d' } },
+      y: { position: 'left', title: { display: true, text: 'Sessions', color: '#7b8cff' }, ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' }, beginAtZero: true },
+      y1: { position: 'right', title: { display: true, text: 'Calls / Obs', color: '#4ade80' }, ticks: { color: '#8a93a6' }, grid: { drawOnChartArea: false }, beginAtZero: true },
+    },
+  },
+});
+
+const timeline = {{ timeline | tojson }};
+// Day buckets — server groups by UTC date. Render local label.
+const labels = timeline.map(d => utcDateToLocal(d.d));
+new Chart(document.getElementById('timeline-chart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      {label: 'Sessions', data: timeline.map(d => d.sessions), borderColor: '#7b8cff', backgroundColor: 'rgba(123,140,255,0.1)', tension: 0.3},
+      {label: 'MCP calls', data: timeline.map(d => d.mcp_calls), borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', tension: 0.3},
+      {label: 'Observations', data: timeline.map(d => d.observations), borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', tension: 0.3, hidden: true},
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#e6e9ef' } } },
+    scales: {
+      x: { ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' } },
+      y: { ticks: { color: '#8a93a6' }, grid: { color: '#2a2f3d' }, beginAtZero: true },
+    },
+  },
+});
+</script>
+{% endblock %}

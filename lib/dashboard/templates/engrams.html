@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Engrams{% endblock %}
+{% block content %}
+<h1>Engrams</h1>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="Total in the index (~/.prism/index.json), independent of filters applied below."><div class="card-label">Total</div><div class="card-value">{{ totals.total }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Engrams with scope=global — visible in any project."><div class="card-label">Global</div><div class="card-value">{{ totals.global }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Engrams with scope=project — only visible in the project where they were created."><div class="card-label">Project</div><div class="card-value">{{ totals.project }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Engrams marked as pinned — never decay and have a guaranteed slot in the prism.md top 10."><div class="card-label">Pinned</div><div class="card-value">{{ totals.pinned }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Engrams that appeared in at least 1 recorded MCP call (search/relevant/get)."><div class="card-label">With MCP hits</div><div class="card-value">{{ totals.with_hits }}</div></div>
+</div>
+
+<div class="panel-grid">
+  <div class="panel">
+    <h2>By kind</h2>
+    <table>
+      <thead><tr><th>Kind</th><th>Count</th></tr></thead>
+      <tbody>
+      {% for k in kind_counts %}
+      <tr>
+        <td><a href="/engrams?kind={{ k.kind }}"><span class="tag {{ k.kind }}">{{ k.kind or '?' }}</span></a></td>
+        <td>{{ k.c }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>By confidence range</h2>
+    <table>
+      <thead><tr><th>Range</th><th>Count</th></tr></thead>
+      <tbody>
+      {% for label, count in conf_buckets.items() %}
+      <tr>
+        <td>{{ label }}</td>
+        <td>{{ count }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form class="filters" method="get">
+  <label>Scope:
+    <select name="scope">
+      <option value="">All</option>
+      <option value="global" {% if scope == 'global' %}selected{% endif %}>global</option>
+      <option value="project" {% if scope == 'project' %}selected{% endif %}>project</option>
+    </select>
+  </label>
+  <label>Kind:
+    <select name="kind">
+      <option value="">All</option>
+      <option value="correction" {% if kind == 'correction' %}selected{% endif %}>correction</option>
+      <option value="preference" {% if kind == 'preference' %}selected{% endif %}>preference</option>
+      <option value="solution" {% if kind == 'solution' %}selected{% endif %}>solution</option>
+      <option value="domain_fact" {% if kind == 'domain_fact' %}selected{% endif %}>domain_fact</option>
+      <option value="error_recipe" {% if kind == 'error_recipe' %}selected{% endif %}>error_recipe</option>
+    </select>
+  </label>
+  <label>Min conf:
+    <input type="number" name="min_conf" min="0" max="1" step="0.05" value="{{ min_conf if min_conf is not none else '' }}" style="width:80px">
+  </label>
+  <label>
+    <input type="checkbox" name="with_hits" value="1" {% if with_hits == '1' %}checked{% endif %}>
+    only with hits
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+<div class="panel">
+  <p class="muted">{{ engrams|length }} engrams (limit 500)</p>
+  <table>
+    <thead>
+      <tr>
+        <th class="has-tooltip" data-tooltip="kebab-case engram ID. Click for details (timeline, sessions where used).">Engram</th>
+        <th class="has-tooltip" data-tooltip="global = visible in any project.&#10;project = only in the project where it was created (project_id in frontmatter).">Scope</th>
+        <th class="has-tooltip" data-tooltip="Engram kind:&#10;• correction — user redirected Claude&#10;• preference — stylistic/architectural choice&#10;• solution — hard-won solution&#10;• domain_fact — codebase/business fact&#10;• error_recipe — specific error + fix">Kind</th>
+        <th class="has-tooltip" data-tooltip="Score 0–0.95. Rises with reinforcement (push layer +0.02, MCP query +0.02). Falls with decay (2%/week if not reinforced).">Conf</th>
+        <th class="has-tooltip" data-tooltip="Total accumulated evidence/reinforcement. Includes push layer reinforcement (not just MCP hits).">Evidence</th>
+        <th class="has-tooltip" data-tooltip="How many times this engram was returned by MCP calls (prism_search, prism_relevant, prism_get) recorded by the dashboard.">MCP hits</th>
+        <th class="has-tooltip" data-tooltip="Pinned = never decays and has a guaranteed slot in the prism.md top 10. Manual in the frontmatter.">Pinned</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in engrams %}
+    <tr>
+      <td><a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:60] }}{% if e.engram_id|length > 60 %}…{% endif %}</a></td>
+      <td><span class="tag {{ e.scope or '' }}">{{ e.scope or '?' }}</span></td>
+      <td><span class="tag {{ e.kind or '' }}">{{ e.kind or '?' }}</span></td>
+      <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+      <td>{{ e.evidence_count }}</td>
+      <td><strong>{{ e.hits }}</strong></td>
+      <td>{% if e.pinned %}<span class="tag pinned">📌</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

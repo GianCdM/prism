@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Attribution{% endblock %}
+{% block content %}
+<h1>Atribuição — Push / Pull / Dormante</h1>
+<p class="muted">Como o conhecimento chega (ou não) ao Claude. <strong>Push</strong> = injetado no <code>prism.md</code> toda sessão · <strong>Pull</strong> = buscado via MCP · <strong>Dormante</strong> = nunca alcançado por nenhum canal.</p>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="Engrams injetados no prism.md (push layer) toda sessão.&#10;'Influência' = quantos desses aparecem no teu trabalho (observation_match).">
+    <div class="card-label">Push — entregue</div>
+    <div class="card-value green">{{ c.push_n }}</div>
+    <div class="card-sub">{{ c.push_influencing }}/{{ c.push_n }} aparecem no trabalho ({{ c.influence_rate }}%)</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Engrams recuperados via MCP (prism_search/get/relevant).&#10;Coverage = % de sessões que buscaram ao menos 1×.">
+    <div class="card-label">Pull — MCP</div>
+    <div class="card-value {% if c.pull_pct >= 20 %}yellow{% else %}red{% endif %}">{{ c.pull_n }}</div>
+    <div class="card-sub">coverage {{ c.coverage_pct }}% ({{ c.with_search }}/{{ c.total_sessions }} sessões)</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Engrams que NUNCA foram empurrados nem buscados — não alcançam o Claude por nenhum canal. Existem na base mas são peso morto.">
+    <div class="card-label">Dormante</div>
+    <div class="card-value {% if c.dormant_pct < 50 %}yellow{% else %}red{% endif %}">{{ c.dormant_n }}</div>
+    <div class="card-sub">{{ c.dormant_pct }}% de {{ c.total }} engrams</div>
+  </div>
+</div>
+
+<div class="chart-container">
+  <h2>Distribuição dos canais</h2>
+  <canvas id="channels-chart" style="max-height:300px"></canvas>
+</div>
+
+<div class="panel">
+  <h2 class="has-tooltip" data-tooltip="Proxy de influência (FLOOR): engrams do push layer cujos termos distintivos (id + trigger) aparecem nas observações das sessões (>=2 termos distintos). Forte pra técnico (mermaid, pptx), fraco pra estilo. Overlap != causalidade comprovada.">Influência do push — onde o conhecimento empurrado aparece ({{ influence|length }})</h2>
+  <p class="muted">Em quantas sessões cada engram empurrado se reflete. É o sinal de atribuição (piso, via overlap de termos).</p>
+  {% if influence %}
+  <table>
+    <thead><tr><th>Engram</th><th>Kind</th><th>Conf</th><th>Sessões</th></tr></thead>
+    <tbody>
+    {% for e in influence %}
+    <tr>
+      <td><a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:56] }}{% if e.engram_id|length > 56 %}…{% endif %}</a></td>
+      <td><span class="tag {{ e.kind or '' }}">{{ e.kind or '?' }}</span></td>
+      <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+      <td><strong>{{ e.sessions }}</strong></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Sem sinal de influência ainda — rode mais sessões + collect.</div>{% endif %}
+</div>
+
+<div class="panel">
+  <h2 class="has-tooltip" data-tooltip="Engrams no push layer que NÃO apareceram em nenhuma sessão (sem observation_match). Custam tokens toda sessão mas não dão sinal de uso — ou estão internalizados (ok), ou são ruído no push (rever).">Push sem sinal — empurrados mas não vistos ({{ push_silent|length }})</h2>
+  {% if push_silent %}
+  <table>
+    <thead><tr><th>Engram</th><th>Kind</th><th>Conf</th><th>Pinned</th></tr></thead>
+    <tbody>
+    {% for e in push_silent %}
+    <tr>
+      <td><a href="/engrams/{{ e.engram_id }}">{{ e.engram_id[:56] }}{% if e.engram_id|length > 56 %}…{% endif %}</a></td>
+      <td><span class="tag {{ e.kind or '' }}">{{ e.kind or '?' }}</span></td>
+      <td>{{ '%.2f'|format(e.confidence or 0) }}</td>
+      <td>{% if e.pinned %}<span class="tag pinned">📌</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Todos os engrams empurrados aparecem no trabalho. 🎉</div>{% endif %}
+</div>
+
+<script>
+new Chart(document.getElementById('channels-chart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Push (entregue)', 'Pull-only (MCP)', 'Dormante'],
+    datasets: [{
+      data: [{{ c.push_n }}, {{ c.pull_only_n }}, {{ c.dormant_n }}],
+      backgroundColor: ['#4ade80', '#7b8cff', '#3a3f4d'],
+      borderColor: '#1a1d27', borderWidth: 2,
+    }],
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#e6e9ef' } },
+      tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed} engrams` } },
+    },
+  },
+});
+</script>
+{% endblock %}

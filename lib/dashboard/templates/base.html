@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Prism Dashboard — {% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // --- Timezone helpers (defined in <head> so inline chart scripts in <body> can call them) ---
+    // Server stores everything in UTC. We render in the browser's local TZ.
+    const TZ_FMT = {
+      short: new Intl.DateTimeFormat([], {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}),
+      full:  new Intl.DateTimeFormat([], {year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+      date:  new Intl.DateTimeFormat([], {year: 'numeric', month: '2-digit', day: '2-digit'}),
+      time:  new Intl.DateTimeFormat([], {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+    };
+    function renderLocalTimes(root) {
+      (root || document).querySelectorAll('time[datetime]').forEach(el => {
+        const iso = el.getAttribute('datetime');
+        if (!iso) return;
+        const d = new Date(iso);
+        if (isNaN(d)) return;
+        const fmt = el.dataset.format || 'short';
+        el.textContent = (TZ_FMT[fmt] || TZ_FMT.short).format(d);
+        el.setAttribute('title', `UTC: ${iso}`);
+      });
+    }
+    // Convert "YYYY-MM-DD HH:00" UTC hour bucket → local "MM-DD HH:00"
+    function utcHourToLocal(utcHourStr) {
+      const d = new Date(utcHourStr.replace(' ', 'T') + ':00Z');
+      const pad = n => n.toString().padStart(2, '0');
+      return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:00`;
+    }
+    // Convert "YYYY-MM-DD" UTC date → local "YYYY-MM-DD" (noon UTC avoids DST midnight ambiguity)
+    function utcDateToLocal(utcDateStr) {
+      const d = new Date(utcDateStr + 'T12:00:00Z');
+      const pad = n => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand">🔮 Prism Dashboard</div>
+    <nav>
+      <a href="/" class="{% if request.endpoint == 'overview' %}active{% endif %}">Overview</a>
+      <a href="/sessions" class="{% if request.endpoint and 'session' in request.endpoint %}active{% endif %}">Sessions</a>
+      <a href="/engrams" class="{% if request.endpoint and 'engram' in request.endpoint %}active{% endif %}">Engrams</a>
+      <a href="/coverage" class="{% if request.endpoint == 'coverage' %}active{% endif %}">Coverage</a>
+      <a href="/attribution" class="{% if request.endpoint == 'attribution' %}active{% endif %}">Attribution</a>
+    </nav>
+    <span id="tz-indicator" class="muted" style="font-size:11px;margin-left:auto" title="All timestamps are stored in UTC and rendered in your local timezone. Hover any time to see the original UTC value.">times in <strong>—</strong></span>
+    <form method="POST" action="/api/refresh" id="refresh-form" style="margin-left:12px">
+      <button type="button" id="refresh-btn">↻ Refresh</button>
+    </form>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    // Helpers (TZ_FMT, renderLocalTimes, utcHourToLocal, utcDateToLocal) are defined in <head>
+    // so inline chart scripts in the content block can call them during parse.
+    document.addEventListener('DOMContentLoaded', () => {
+      renderLocalTimes();
+      const tzEl = document.querySelector('#tz-indicator strong');
+      if (tzEl) tzEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    });
+
+    document.getElementById('refresh-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('refresh-btn');
+      btn.disabled = true;
+      btn.textContent = '↻ Collecting...';
+      try {
+        const r = await fetch('/api/refresh', {method: 'POST'});
+        const stats = await r.json();
+        btn.textContent = `↻ Collected ${JSON.stringify(stats)}`;
+        setTimeout(() => location.reload(), 800);
+      } catch(e) {
+        btn.textContent = '↻ Error: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

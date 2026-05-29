@@ -177,6 +177,16 @@ def main() -> None:
     token_revoke.add_argument("name", help="Registry name")
     token_revoke.add_argument("token_value", help="Token to revoke")
 
+    # dashboard
+    dash_parser = subparsers.add_parser("dashboard", help="Local metrics dashboard (web UI at localhost:7878)")
+    dash_sub = dash_parser.add_subparsers(dest="dashboard_command")
+    dash_serve = dash_sub.add_parser("serve", help="Start the dashboard web server")
+    dash_serve.add_argument("--host", default="127.0.0.1")
+    dash_serve.add_argument("--port", default=7878, type=int)
+    dash_serve.add_argument("--debug", action="store_true")
+    dash_sub.add_parser("collect", help="Run collector once (refresh DB without serving)")
+    dash_sub.add_parser("reset", help="Delete the local metrics DB (~/.prism-dashboard/metrics.db)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -292,12 +302,31 @@ def main() -> None:
         from .commands import cmd_registry
         cmd_registry(args)
 
+    elif args.command == "dashboard":
+        sub = getattr(args, "dashboard_command", None)
+        if sub == "serve":
+            from .dashboard.server import serve
+            serve(host=args.host, port=args.port, debug=args.debug)
+        elif sub == "collect":
+            from .dashboard.collector import collect_all
+            stats = collect_all()
+            print(f"Collected: {stats}")
+        elif sub == "reset":
+            from .dashboard.collector import DB_PATH
+            if DB_PATH.exists():
+                DB_PATH.unlink()
+                print(f"Removed {DB_PATH}")
+            else:
+                print(f"No DB at {DB_PATH}")
+        else:
+            print("Usage: prism dashboard {serve|collect|reset}")
+
     else:
         parser.print_help()
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", "dashboard", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction

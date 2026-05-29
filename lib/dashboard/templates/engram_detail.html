@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ engram.engram_id }}{% endblock %}
+{% block content %}
+<h1><code>{{ engram.engram_id }}</code></h1>
+<p>
+  <span class="tag {{ engram.scope }}">{{ engram.scope }}</span>
+  <span class="tag {{ engram.kind }}">{{ engram.kind }}</span>
+  {% if engram.pinned %}<span class="tag pinned">📌 pinned</span>{% endif %}
+  · domain <code>{{ engram.domain or '?' }}</code>
+  · project <code>{{ engram.project_id or '?' }}</code>
+</p>
+
+<div class="cards">
+  <div class="card has-tooltip" data-tooltip="Score 0–0.95. Rises with reinforcement (push +0.02 / MCP +0.02). Falls with decay (2%/week if not reinforced). <0.20 = archived."><div class="card-label">Confidence</div><div class="card-value">{{ '%.2f'|format(engram.confidence or 0) }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Total accumulated reinforcements since creation. Includes push layer (engram entered prism.md) + MCP queries + observation matches."><div class="card-label">Evidence count</div><div class="card-value">{{ engram.evidence_count }}</div></div>
+  <div class="card has-tooltip" data-tooltip="How many times this engram was returned in MCP calls (search/relevant/get) recorded by the dashboard. Subset of evidence_count."><div class="card-label">MCP hits</div><div class="card-value">{{ events|length }}</div></div>
+  <div class="card has-tooltip" data-tooltip="Date of the last reinforcement. Base of the decay calculation — the older it is, the closer to archival."><div class="card-label">Last observed</div><div class="card-value" style="font-size:14px"><time datetime="{{ engram.last_observed }}" data-format="date">{{ engram.last_observed }}</time></div></div>
+</div>
+
+<div class="panel">
+  <h2>Trigger</h2>
+  <p>{{ engram.trigger or '(no trigger)' }}</p>
+</div>
+
+<div class="panel">
+  <h2>Content (preview)</h2>
+  <pre>{{ body }}</pre>
+  <p class="muted">File: <code>{{ engram.path }}</code></p>
+</div>
+
+<div class="panel">
+  <h2>Recent events ({{ events|length }})</h2>
+  {% if events %}
+  <table>
+    <thead><tr><th>Timestamp</th><th>Session</th><th>Type</th></tr></thead>
+    <tbody>
+    {% for ev in events %}
+    <tr>
+      <td class="muted"><time datetime="{{ ev.timestamp }}" data-format="full">{{ ev.timestamp[:19] }}</time></td>
+      <td>{% if ev.session_id %}<a href="/sessions/{{ ev.session_id }}">{{ ev.session_id[:12] }}…</a>{% else %}—{% endif %}</td>
+      <td><span class="tag">{{ ev.event_type }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No events recorded (no MCP hits).</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Sessions where used ({{ sessions|length }})</h2>
+  {% if sessions %}
+  <table>
+    <thead><tr><th>Started</th><th>Project</th><th>cwd</th></tr></thead>
+    <tbody>
+    {% for s in sessions %}
+    <tr>
+      <td><a href="/sessions/{{ s.session_id }}"><time datetime="{{ s.started_at }}" data-format="short">{{ s.started_at[:16] }}</time></a></td>
+      <td>{{ s.project_id or '?' }}</td>
+      <td class="muted">{{ s.cwd[-50:] if s.cwd else '' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No session used this engram via MCP.</div>
+  {% endif %}
+</div>
+{% endblock %}

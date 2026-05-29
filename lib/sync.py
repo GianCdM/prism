@@ -33,6 +33,7 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
     """
     config = get_config()
     max_lines = config.get("max_context_lines", 100)
+    max_push = config.get("max_push_items", 10)
 
     # Collect all entries for selection
     all_entries = _collect_entries(project_id)
@@ -47,7 +48,7 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
         return ""
 
     # Select what goes into the system prompt (the PUSH layer)
-    prompt_entries = _select_prompt_entries(all_entries)
+    prompt_entries = _select_prompt_entries(all_entries, max_items=max_push)
     publish_ready = _find_publish_ready(all_entries)
 
     # Credit pushed engrams so they don't decay while actively in context

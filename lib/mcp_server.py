@@ -283,9 +283,65 @@ TOOLS = [
 ]
 
 
+def _infer_active_session_id():
+    """Best-effort: find the most-recently-modified Claude Code transcript.
+
+    The MCP protocol doesn't carry a session_id, so we infer it from the
+    transcript file that was touched most recently across all projects.
+    Single-user single-session assumption — may misattribute under heavy
+    parallel usage.
+    """
+    try:
+        from pathlib import Path
+        projects = Path.home() / ".claude" / "projects"
+        if not projects.exists():
+            return None
+        latest_mtime = 0
+        latest_id = None
+        for transcript in projects.glob("*/*.jsonl"):
+            try:
+                mtime = transcript.stat().st_mtime
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_id = transcript.stem
+            except OSError:
+                continue
+        return latest_id
+    except Exception:
+        return None
+
+
+def _log_mcp_call(tool_name, params, result_count, engrams_returned, duration_ms):
+    """Append metrics for dashboard. Best-effort, never breaks tool calls."""
+    try:
+        from pathlib import Path
+        from datetime import datetime, timezone
+        metrics_path = Path(os.environ.get("PRISM_HOME", str(Path.home() / ".prism"))) / "metrics.jsonl"
+        session_id = (
+            os.environ.get("CLAUDE_SESSION_ID")
+            or os.environ.get("PRISM_SESSION_ID")
+            or _infer_active_session_id()
+        )
+        rec = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": session_id,
+            "tool": tool_name,
+            "params": params,
+            "result_count": result_count,
+            "engrams_returned": engrams_returned,
+            "duration_ms": duration_ms,
+        }
+        with metrics_path.open("a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # Never break MCP responses for metrics
+
+
 def _handle_tool_call(name, arguments):
     """Dispatch MCP tool calls to implementations."""
     project_id = os.environ.get("PRISM_PROJECT_ID")
+    import time as _time
+    _start = _time.time()
 
     if name == "prism_search":
         results = _search(
@@ -293,6 +349,7 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        _log_mcp_call(name, arguments, len(results), [r["id"] for r in results], int((_time.time() - _start) * 1000))
         if not results:
             return {"content": [{"type": "text", "text": "No matching entries found."}]}
         if results:
@@ -305,6 +362,8 @@ def _handle_tool_call(name, arguments):
 
     elif name == "prism_get":
         result = _get_entry_content(arguments["id"])
+        engram_id = arguments.get("id")
+        _log_mcp_call(name, arguments, 1 if result else 0, [engram_id] if result else [], int((_time.time() - _start) * 1000))
         if not result:
             return {"content": [{"type": "text", "text": f"Entry '{arguments['id']}' not found."}], "isError": True}
         _reinforce_batch([arguments["id"]])
@@ -317,6 +376,7 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        _log_mcp_call(name, arguments, len(results), [r["id"] for r in results], int((_time.time() - _start) * 1000))
         if not results:
             return {"content": [{"type": "text", "text": "No relevant entries for this context."}]}
         if results:
@@ -333,6 +393,7 @@ def _handle_tool_call(name, arguments):
             kind=arguments.get("kind", "preference"),
             project_id=project_id,
         )
+        _log_mcp_call(name, arguments, 1, [result.get("id")] if result.get("id") else [], int((_time.time() - _start) * 1000))
         return {"content": [{"type": "text", "text": f"Recorded entry: {result['id']} (status: {result['status']})"}]}
 
     else:
