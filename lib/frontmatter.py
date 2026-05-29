@@ -89,3 +89,45 @@ def sync_entry_to_file(entry: dict) -> bool:
 def sync_entries_to_files(entries: list[dict]) -> int:
     """Sync multiple index entries to disk. Returns count of files updated."""
     return sum(1 for e in entries if sync_entry_to_file(e))
+
+
+def set_pinned_in_file(path: Path, pinned: bool) -> bool:
+    """Set ``pinned: true/false`` in an engram file's frontmatter.
+
+    Targeted helper — independent of the confidence/evidence sync path, so it is
+    not pulled into bulk sync_entries_to_files writes. Returns True if written.
+    """
+    if not path.is_file():
+        return False
+    try:
+        lines = path.read_text().splitlines(keepends=True)
+    except OSError:
+        return False
+    if not lines or lines[0].strip() != "---":
+        return False
+    val = "true" if pinned else "false"
+    in_fm = False
+    close_idx = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "---":
+            if not in_fm:
+                in_fm = True
+            else:
+                close_idx = i
+                break
+        elif in_fm and stripped.startswith("pinned:"):
+            lines[i] = f"pinned: {val}\n"
+            try:
+                path.write_text("".join(lines))
+                return True
+            except OSError:
+                return False
+    if close_idx is not None:
+        lines[close_idx:close_idx] = [f"pinned: {val}\n"]
+        try:
+            path.write_text("".join(lines))
+            return True
+        except OSError:
+            return False
+    return False

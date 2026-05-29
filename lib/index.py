@@ -215,6 +215,21 @@ def update_last_observed(entry_id: str, observed_date: Optional[str] = None) -> 
     return result[0]
 
 
+def set_pinned(entry_id: str, pinned: bool) -> bool:
+    """Set the pinned flag on an index entry. Returns True if the entry was found."""
+    result = [False]
+
+    def _fn(index):
+        for e in index["engrams"]:
+            if e["id"] == entry_id:
+                e["pinned"] = pinned
+                result[0] = True
+                break
+
+    _update_index(_fn)
+    return result[0]
+
+
 def reinforce_entries(entry_ids: list[str]) -> int:
     """Increment evidence_count, refresh last_observed, and boost confidence for a set of entries.
 

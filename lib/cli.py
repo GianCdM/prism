@@ -33,6 +33,13 @@ def main() -> None:
     p_learn.add_argument("text", nargs='+', help="The knowledge to learn")
     p_learn.add_argument("--scope", choices=["project", "global"], default="project")
     p_learn.add_argument("--project", help="Override project ID")
+    p_learn.add_argument("--pin", action="store_true", help="Pin the engram: always in the push layer, never decays")
+
+    # pin / unpin
+    p_pin = subparsers.add_parser("pin", help="Pin an existing engram (always in push layer, never decays)")
+    p_pin.add_argument("id", help="Engram ID to pin")
+    p_unpin = subparsers.add_parser("unpin", help="Unpin an engram (allow normal decay)")
+    p_unpin.add_argument("id", help="Engram ID to unpin")
 
     # forget
     p_forget = subparsers.add_parser("forget", help="Archive a knowledge entry")
@@ -214,7 +221,15 @@ def main() -> None:
 
     elif args.command == "learn":
         from .commands import cmd_learn
-        cmd_learn(" ".join(args.text), project_id=args.project, scope=args.scope)
+        cmd_learn(" ".join(args.text), project_id=args.project, scope=args.scope, pin=args.pin)
+
+    elif args.command == "pin":
+        from .commands import cmd_pin
+        cmd_pin(args.id, pinned=True)
+
+    elif args.command == "unpin":
+        from .commands import cmd_pin
+        cmd_pin(args.id, pinned=False)
 
     elif args.command == "forget":
         from .commands import cmd_forget

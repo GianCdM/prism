@@ -25,9 +25,10 @@ from .index import (
     load_index,
     remove_entry,
     save_index,
+    set_pinned,
     update_confidence,
 )
-from .frontmatter import update_frontmatter
+from .frontmatter import set_pinned_in_file, update_frontmatter
 from .scrub import scrub_text, is_blocked_text
 from .project import (
     cached_project_id_path,
@@ -465,8 +466,12 @@ def cmd_status(project_id: Optional[str] = None) -> None:
             pass
 
 
-def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
-    """Manually teach a fact or preference. Creates with confidence 0.9."""
+def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project", pin: bool = False) -> None:
+    """Manually teach a fact or preference. Creates with confidence 0.9.
+
+    pin=True marks the engram as pinned: always kept in the push layer (prism.md)
+    and never decays.
+    """
     text = scrub_text(text)
     if is_blocked_text(text):
         print("Error: input matched a block pattern and was not saved.")
@@ -489,6 +494,7 @@ def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project
     filepath = engrams_dir / f"{entry_id}.md"
 
     # Write knowledge entry file
+    pinned_line = "pinned: true\n" if pin else ""
     content = f"""---
 id: {entry_id}
 kind: preference
@@ -499,7 +505,7 @@ scope: {scope}
 project_id: {project_id}
 evidence_count: 1
 last_observed: {date.today().isoformat()}
-tags: [manual]
+{pinned_line}tags: [manual]
 ---
 
 {text}
@@ -522,6 +528,7 @@ tags: [manual]
         path=rel_path,
         evidence_count=1,
         tags=["manual"],
+        pinned=pin,
     )
     try:
         add_entry(entry)
@@ -530,12 +537,35 @@ tags: [manual]
         print(f"Error: could not update index, rolled back file: {e}")
         return
 
-    print(f"Learned: {entry_id} (confidence: 0.9)")
+    print(f"Learned: {entry_id} (confidence: 0.9){' [pinned]' if pin else ''}")
     print(f"File: {filepath}")
 
     # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
     from .sync import sync_claude_code
     sync_claude_code(project_id)
+
+
+def cmd_pin(entry_id: str, pinned: bool = True) -> None:
+    """Pin or unpin an existing engram.
+
+    Pinned engrams are always injected into the push layer (prism.md) and never
+    decay. Updates the index and keeps the engram file's frontmatter in sync.
+    """
+    entry = get_entry(entry_id)
+    if not entry:
+        print(f"Error: no engram with id '{entry_id}'. Use 'prism status' to list ids.")
+        return
+    if not set_pinned(entry_id, pinned):
+        print(f"Error: could not update the index for '{entry_id}'.")
+        return
+    path_str = entry.get("path")
+    if path_str:
+        set_pinned_in_file(PRISM_HOME / path_str, pinned)
+    print(f"{'Pinned' if pinned else 'Unpinned'}: {entry_id}")
+
+    # Auto-sync .claude/prism.md so the (un)pin takes effect in the push layer now.
+    from .sync import sync_claude_code
+    sync_claude_code(detect_project_id())
 
 
 def cmd_forget(entry_id: str, _skip_sync: bool = False) -> None:
