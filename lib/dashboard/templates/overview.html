@@ -26,12 +26,22 @@
     <div class="card-label">Observations</div>
     <div class="card-value">{{ total_obs }}</div>
   </div>
-  <div class="card has-tooltip" data-tooltip="Instrumented calls to the Prism MCP server.&#10;Direct measure of how often Claude queries the knowledge base via prism_search, prism_relevant, prism_get, prism_record.">
-    <div class="card-label">MCP calls</div>
-    <div class="card-value">{{ total_mcp }}</div>
+  <div class="card has-tooltip" data-tooltip="MCP reads — on-demand retrieval the model CHOSE to do: prism_search / prism_relevant / prism_get.&#10;Excludes prism_record (a write — own card) and the hook (separate channel).">
+    <div class="card-label">MCP reads</div>
+    <div class="card-value">{{ total_reads }}</div>
     <div class="card-sub">
-      {% for b in mcp_breakdown %}{{ b.tool_name }}: {{ b.c }}{% if not loop.last %} · {% endif %}{% endfor %}
+      {% for b in reads_breakdown %}{{ b.tool_name }}: {{ b.c }}{% if not loop.last %} · {% endif %}{% endfor %}{% if not reads_breakdown %}search / relevant / get{% endif %}
     </div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Records — prism_record calls: the model WRITING new knowledge into the base (contribution, not retrieval).">
+    <div class="card-label">Records (writes)</div>
+    <div class="card-value">{{ total_records }}</div>
+    <div class="card-sub">prism_record</div>
+  </div>
+  <div class="card has-tooltip" data-tooltip="Hook retrieves (hook_retrieve) — automatic, deterministic surfacing of relevant engrams on every prompt. NOT an MCP call; it's the channel that reaches the dormant base. See Attribution.">
+    <div class="card-label">Hook retrieves</div>
+    <div class="card-value">{{ total_hook }}</div>
+    <div class="card-sub">auto pull · non-MCP</div>
   </div>
   <div class="card has-tooltip" data-tooltip="% of sessions where Claude called prism_search or prism_relevant ≥1×.&#10;Indicates how much it actually queries the knowledge base beyond the top 10 loaded at boot.">
     <div class="card-label">Coverage (sessions with search)</div>
@@ -122,14 +132,15 @@
     <h2>Recent sessions</h2>
     {% if recent_sessions %}
     <table>
-      <thead><tr><th>Started</th><th>Dur</th><th>Obs</th><th>MCP</th><th>Search?</th></tr></thead>
+      <thead><tr><th>Started</th><th>Dur</th><th>Obs</th><th title="MCP reads: prism_search/relevant/get">MCP</th><th title="Hook retrieves (UserPromptSubmit)">Hook</th><th>Search?</th></tr></thead>
       <tbody>
       {% for s in recent_sessions %}
-      <tr class="has-tooltip" data-tooltip="session_id: {{ s.session_id }}&#10;project: {{ s.project_id or '?' }}&#10;cwd: {{ s.cwd or '?' }}&#10;started (UTC): {{ s.started_at }}&#10;{{ s.observations_count }} observations · {{ s.mcp_calls_count }} MCP calls · {{ s.engrams_reinforced_count }} engrams referenced">
+      <tr class="has-tooltip" data-tooltip="session_id: {{ s.session_id }}&#10;project: {{ s.project_id or '?' }}&#10;cwd: {{ s.cwd or '?' }}&#10;started (UTC): {{ s.started_at }}&#10;{{ s.observations_count }} observations · {{ s.mcp_calls_count }} MCP reads · {{ s.hook_retrieves_count }} hook retrieves · {{ s.engrams_reinforced_count }} engrams referenced">
         <td><a href="/sessions/{{ s.session_id }}"><time datetime="{{ s.started_at }}" data-format="short">{{ s.started_at[:16] }}</time></a></td>
         <td>{{ (s.duration_sec or 0) // 60 }}m</td>
         <td>{{ s.observations_count }}</td>
         <td>{{ s.mcp_calls_count }}</td>
+        <td>{{ s.hook_retrieves_count }}</td>
         <td>{% if s.has_search %}<span class="tag global">✓</span>{% else %}<span class="tag">—</span>{% endif %}</td>
       </tr>
       {% endfor %}
@@ -152,7 +163,8 @@ new Chart(document.getElementById('hourly-chart'), {
       // order: lower draws first (behind), higher draws last (in front).
       // Bars stay in the back so the MCP calls line is always visible on top.
       {label: 'Sessions', data: hourly.map(h => h.sessions), backgroundColor: '#7b8cff', stack: 'a', yAxisID: 'y', order: 2},
-      {label: 'MCP calls', data: hourly.map(h => h.mcp_calls), backgroundColor: '#4ade80', type: 'line', tension: 0.2, borderColor: '#4ade80', yAxisID: 'y1', pointRadius: 3, order: 0},
+      {label: 'MCP reads', data: hourly.map(h => h.mcp_reads), backgroundColor: '#4ade80', type: 'line', tension: 0.2, borderColor: '#4ade80', yAxisID: 'y1', pointRadius: 3, order: 0},
+      {label: 'Hook retrieves', data: hourly.map(h => h.hook), backgroundColor: '#22d3ee', type: 'line', tension: 0.2, borderColor: '#22d3ee', yAxisID: 'y1', pointRadius: 3, order: 0},
       {label: 'Observations', data: hourly.map(h => h.observations), backgroundColor: '#fbbf24', type: 'line', tension: 0.2, borderColor: '#fbbf24', yAxisID: 'y1', pointRadius: 3, hidden: true, order: 1},
     ],
   },
@@ -177,7 +189,8 @@ new Chart(document.getElementById('timeline-chart'), {
     labels,
     datasets: [
       {label: 'Sessions', data: timeline.map(d => d.sessions), borderColor: '#7b8cff', backgroundColor: 'rgba(123,140,255,0.1)', tension: 0.3},
-      {label: 'MCP calls', data: timeline.map(d => d.mcp_calls), borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', tension: 0.3},
+      {label: 'MCP reads', data: timeline.map(d => d.mcp_calls), borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', tension: 0.3},
+      {label: 'Hook retrieves', data: timeline.map(d => d.hook), borderColor: '#22d3ee', backgroundColor: 'rgba(34,211,238,0.1)', tension: 0.3},
       {label: 'Observations', data: timeline.map(d => d.observations), borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', tension: 0.3, hidden: true},
     ],
   },

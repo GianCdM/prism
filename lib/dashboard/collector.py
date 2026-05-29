@@ -434,8 +434,11 @@ def update_session_aggregates(conn: sqlite3.Connection) -> int:
         obs = conn.execute(
             "SELECT COUNT(*) FROM observations WHERE session_id=?", (sid,)
         ).fetchone()[0]
+        # mcp_calls_count = MCP READS only (search/relevant/get). Records (writes) and
+        # hook_retrieve (separate channel) are queried independently where shown.
         mcp = conn.execute(
-            "SELECT COUNT(*) FROM mcp_calls WHERE session_id=?", (sid,)
+            "SELECT COUNT(*) FROM mcp_calls WHERE session_id=? "
+            "AND tool_name IN ('prism_search','prism_relevant','prism_get')", (sid,)
         ).fetchone()[0]
         has_search = conn.execute(
             "SELECT COUNT(*) FROM mcp_calls WHERE session_id=? AND tool_name IN ('prism_search', 'prism_relevant')",

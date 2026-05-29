@@ -6,13 +6,13 @@
 
 <div class="cards">
   <div class="card has-tooltip" data-tooltip="Tool calls captured by Prism's PreToolUse hook (Bash, Read, Edit, etc.) in this session."><div class="card-label">Observations</div><div class="card-value">{{ session.observations_count }}</div></div>
-  <div class="card has-tooltip" data-tooltip="Total MCP calls to Prism (prism_search, prism_relevant, prism_get, prism_record) in this session."><div class="card-label">MCP calls</div><div class="card-value">{{ session.mcp_calls_count }}</div></div>
+  <div class="card has-tooltip" data-tooltip="MCP reads in this session: prism_search / prism_relevant / prism_get (on-demand retrieval). Excludes prism_record (write) and the hook (separate channel)."><div class="card-label">MCP reads</div><div class="card-value">{{ session.mcp_calls_count }}</div></div>
   <div class="card has-tooltip" data-tooltip="Distinct engrams returned/referenced in some MCP call in this session."><div class="card-label">Engrams reinforced</div><div class="card-value">{{ session.engrams_reinforced_count }}</div></div>
   <div class="card has-tooltip" data-tooltip="Yes = had ≥1 prism_search or prism_relevant. No = only the push layer was used, no explicit search."><div class="card-label">Search?</div><div class="card-value {% if session.has_search %}green{% else %}red{% endif %}">{{ 'Yes' if session.has_search else 'No' }}</div></div>
 </div>
 
 <div class="panel">
-  <h2>MCP calls ({{ mcp_calls|length }})</h2>
+  <h2>MCP calls &amp; hook retrieves ({{ mcp_calls|length }})</h2>
   {% if mcp_calls %}
   <table>
     <thead><tr>

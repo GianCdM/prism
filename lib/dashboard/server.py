@@ -160,16 +160,30 @@ def overview():
 
         # MCP totals + breakdown — authoritative source: mcp_calls table directly
         # (avoids inconsistency when calls exist without an attributed session_id).
-        q = "SELECT COUNT(*) c FROM mcp_calls WHERE 1=1"
+        # Three distinct channels — never conflated:
+        #   MCP reads = prism_search / prism_relevant / prism_get (on-demand retrieval)
+        #   Records   = prism_record (write — contribution, NOT retrieval)
+        #   Hook      = hook_retrieve (automatic retrieval; NOT an MCP call)
+        q = "SELECT COUNT(*) c FROM mcp_calls WHERE tool_name IN ('prism_search','prism_relevant','prism_get')"
         params = []
         q, params = _apply_date_filter(q, params, start, end)
-        total_mcp = conn.execute(q, params).fetchone()["c"] or 0
+        total_reads = conn.execute(q, params).fetchone()["c"] or 0
 
-        q = "SELECT tool_name, COUNT(*) c FROM mcp_calls WHERE 1=1"
+        q = "SELECT tool_name, COUNT(*) c FROM mcp_calls WHERE tool_name IN ('prism_search','prism_relevant','prism_get')"
         params = []
         q, params = _apply_date_filter(q, params, start, end)
         q += " GROUP BY tool_name ORDER BY c DESC"
-        mcp_breakdown = [dict(r) for r in conn.execute(q, params)]
+        reads_breakdown = [dict(r) for r in conn.execute(q, params)]
+
+        q = "SELECT COUNT(*) c FROM mcp_calls WHERE tool_name = 'prism_record'"
+        params = []
+        q, params = _apply_date_filter(q, params, start, end)
+        total_records = conn.execute(q, params).fetchone()["c"] or 0
+
+        q = "SELECT COUNT(*) c FROM mcp_calls WHERE tool_name = 'hook_retrieve'"
+        params = []
+        q, params = _apply_date_filter(q, params, start, end)
+        total_hook = conn.execute(q, params).fetchone()["c"] or 0
 
         # Total engrams
         engrams_count = conn.execute("SELECT COUNT(*) c FROM engrams").fetchone()["c"] or 0
@@ -190,6 +204,13 @@ def overview():
         q += " GROUP BY date(started_at) ORDER BY d"
         timeline = [dict(r) for r in conn.execute(q, params)]
 
+        # Hook retrieves per day (separate channel) — merge into the timeline.
+        hook_by_day = {r[0]: r[1] for r in conn.execute(
+            "SELECT date(timestamp) d, COUNT(*) FROM mcp_calls "
+            "WHERE tool_name='hook_retrieve' GROUP BY date(timestamp)")}
+        for _t in timeline:
+            _t["hook"] = hook_by_day.get(_t["d"], 0)
+
         # Hourly (last 48h) — group each metric by its own event timestamp
         # so MCP calls in a long-running session land on the call's hour,
         # not the session's started_at hour.
@@ -201,7 +222,7 @@ def overview():
                 h = row[0]
                 if not h:
                     continue
-                hours_per_metric.setdefault(h, {"sessions": 0, "mcp_calls": 0, "observations": 0})
+                hours_per_metric.setdefault(h, {"sessions": 0, "mcp_reads": 0, "hook": 0, "observations": 0})
                 hours_per_metric[h][key] = row[1]
 
         # Sessions (by started_at)
@@ -213,9 +234,13 @@ def overview():
         q += " GROUP BY h"
         _bucket(q, "sessions", p)
 
-        # MCP calls (by call timestamp)
-        q = "SELECT strftime('%Y-%m-%d %H:00', timestamp) h, COUNT(*) FROM mcp_calls WHERE timestamp >= ? GROUP BY h"
-        _bucket(q, "mcp_calls", [cutoff_48h])
+        # MCP reads (search/relevant/get) by call timestamp
+        q = "SELECT strftime('%Y-%m-%d %H:00', timestamp) h, COUNT(*) FROM mcp_calls WHERE tool_name IN ('prism_search','prism_relevant','prism_get') AND timestamp >= ? GROUP BY h"
+        _bucket(q, "mcp_reads", [cutoff_48h])
+
+        # Hook retrieves (separate channel) by call timestamp
+        q = "SELECT strftime('%Y-%m-%d %H:00', timestamp) h, COUNT(*) FROM mcp_calls WHERE tool_name = 'hook_retrieve' AND timestamp >= ? GROUP BY h"
+        _bucket(q, "hook", [cutoff_48h])
 
         # Observations (by event timestamp)
         q = "SELECT strftime('%Y-%m-%d %H:00', timestamp) h, COUNT(*) FROM observations WHERE timestamp >= ?"
@@ -244,6 +269,7 @@ def overview():
             FROM engram_events e
             LEFT JOIN engrams eg ON eg.engram_id = e.engram_id
             WHERE e.timestamp >= ?
+              AND e.event_type IN ('search_hit','get_hit','relevant_hit')
             GROUP BY e.engram_id
             ORDER BY hits DESC LIMIT 10
         """
@@ -252,7 +278,9 @@ def overview():
         # Recent sessions
         q = """
             SELECT session_id, started_at, duration_sec, project_id,
-                   observations_count, mcp_calls_count, engrams_reinforced_count, has_search
+                   observations_count, mcp_calls_count, engrams_reinforced_count, has_search,
+                   (SELECT COUNT(*) FROM mcp_calls m WHERE m.session_id=sessions.session_id
+                      AND m.tool_name='hook_retrieve') hook_retrieves_count
             FROM sessions WHERE 1=1
         """
         params = []
@@ -272,10 +300,12 @@ def overview():
         "overview.html",
         total_sessions=total_sessions,
         total_obs=total_obs,
-        total_mcp=total_mcp,
+        total_reads=total_reads,
+        total_records=total_records,
+        total_hook=total_hook,
         sessions_with_search=sessions_with_search,
         coverage_pct=coverage_pct,
-        mcp_breakdown=mcp_breakdown,
+        reads_breakdown=reads_breakdown,
         engrams_count=engrams_count,
         pinned_count=pinned_count,
         timeline=timeline,
@@ -302,7 +332,9 @@ def sessions():
     try:
         q = """
             SELECT session_id, started_at, duration_sec, project_id, cwd,
-                   observations_count, mcp_calls_count, engrams_reinforced_count, has_search
+                   observations_count, mcp_calls_count, engrams_reinforced_count, has_search,
+                   (SELECT COUNT(*) FROM mcp_calls m WHERE m.session_id=sessions.session_id
+                      AND m.tool_name='hook_retrieve') hook_retrieves_count
             FROM sessions WHERE 1=1
         """
         params: list = []

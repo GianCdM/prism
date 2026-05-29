@@ -35,20 +35,22 @@
         <th class="has-tooltip" data-tooltip="SHA256[:12] hash of the git remote of the cwd. Same formula Prism uses to group engrams by project.">Project</th>
         <th class="has-tooltip" data-tooltip="Directory where Claude Code was opened (read from the first message with cwd in the transcript).">cwd</th>
         <th class="has-tooltip" data-tooltip="Observations captured by Prism's PreToolUse hook in this session.">Obs</th>
-        <th class="has-tooltip" data-tooltip="MCP calls to Prism (search/relevant/get/record) recorded in this session.">MCP</th>
+        <th class="has-tooltip" data-tooltip="MCP reads in this session: prism_search / prism_relevant / prism_get (on-demand retrieval). Excludes prism_record (write) and the hook.">MCP</th>
+        <th class="has-tooltip" data-tooltip="Hook retrieves (hook_retrieve) in this session — automatic surfacing on prompt, NOT an MCP call.">Hook</th>
         <th class="has-tooltip" data-tooltip="Distinct engrams referenced (returned in some MCP call) in this session.">Engrams</th>
         <th class="has-tooltip" data-tooltip="✓ if the session had at least 1 prism_search or prism_relevant. Key Coverage metric.">Search?</th>
       </tr>
     </thead>
     <tbody>
     {% for s in sessions %}
-    <tr class="has-tooltip" data-tooltip="session_id: {{ s.session_id }}&#10;project: {{ s.project_id or '?' }}&#10;cwd: {{ s.cwd or '?' }}&#10;started (UTC): {{ s.started_at }}&#10;{{ s.observations_count }} observations · {{ s.mcp_calls_count }} MCP calls · {{ s.engrams_reinforced_count }} engrams referenced">
+    <tr class="has-tooltip" data-tooltip="session_id: {{ s.session_id }}&#10;project: {{ s.project_id or '?' }}&#10;cwd: {{ s.cwd or '?' }}&#10;started (UTC): {{ s.started_at }}&#10;{{ s.observations_count }} observations · {{ s.mcp_calls_count }} MCP reads · {{ s.hook_retrieves_count }} hook retrieves · {{ s.engrams_reinforced_count }} engrams referenced">
       <td><a href="/sessions/{{ s.session_id }}"><time datetime="{{ s.started_at }}" data-format="short">{{ s.started_at[:16] }}</time></a></td>
       <td>{{ (s.duration_sec or 0) // 60 }}m</td>
       <td>{{ (s.project_id or '?')[:14] }}</td>
       <td class="muted">{{ s.cwd[-40:] if s.cwd else '' }}</td>
       <td>{{ s.observations_count }}</td>
       <td>{{ s.mcp_calls_count }}</td>
+      <td>{{ s.hook_retrieves_count }}</td>
       <td>{{ s.engrams_reinforced_count }}</td>
       <td>{% if s.has_search %}<span class="tag global">✓</span>{% else %}<span class="tag">—</span>{% endif %}</td>
     </tr>
