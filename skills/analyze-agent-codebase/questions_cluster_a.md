@@ -1,22 +1,8 @@
+**Before starting this cluster: read `_analysis/index.md`.** It is now in context for all subsequent clusters — do not re-read it again.
+
 ## SECTION 0: AGENT METADATA
 
-### Project Identity
-| **Attribute** | **Answer** | **Source (file:line)** |
-|:-:|:-:|:-:|
-| Project name | | |
-| Stated purpose | Quote the package description or README opening verbatim | |
-| Use case domain | e.g. customer service, coding assistant, research, data analysis, DevOps | |
-| Is the system described as an "agent" in its own documentation? | Quote the relevant line, or state: No | |
-
-### Authorship and Provenance
-| **Attribute** | **Answer** | **Source** |
-|:-:|:-:|:-:|
-| Author(s) or organization | | pyproject.toml / package.json / git log |
-| License | | LICENSE file |
-| Repository creation date | | git log — first commit |
-| Last commit date | | git log — most recent commit |
-| Version | | pyproject.toml / package.json |
-
+Reference `_analysis/index.md` for all project identity and authorship fields. Do not re-read source files for this section.
 
 ## SECTION 1: SDK, LLM STACK AND MODEL CONFIGURATION
 
@@ -34,8 +20,6 @@ Answer:
 ---
 
 ## SECTION 2A: AGENT ARCHITECTURE — INVENTORY
-
-Prerequisite: complete Section 3A first. Use the generic terms defined there.
 
 Find and read the orchestration definition, all execution unit implementations, all control flow logic, and all LLM instantiation code.
 
@@ -58,9 +42,7 @@ Find and read the orchestration definition, all execution unit implementations, 
 
 ## SECTION 2B: AGENT ARCHITECTURE — CLASSIFICATION
 
-Prerequisite: complete Section 3B first. Apply the criteria below to the inventory produced there.
-
-**2A — Execution unit classification:** Apply these criteria to each unit from Section 3B:
+**2A — Execution unit classification:** Apply these criteria to each unit from Section 2A:
 - **Agent**: Makes LLM calls, AND has tool selection discretion (can choose among multiple tools or none), AND can loop (output can route back to itself for further reasoning).
 - **Constrained LLM step**: Makes LLM calls but fails one or both conditions above. State which condition(s) it fails and why an LLM is needed here at all (vs. deterministic code).
 - **Deterministic processing unit**: Makes no LLM calls. A chain of these is a data pipeline, not an agent pattern.

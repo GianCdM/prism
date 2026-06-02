@@ -22,9 +22,27 @@ All output goes to `{CODEBASE_ROOT}/_analysis/extracted_skills_codebase/`.
 
 ## Instructions
 
-### Phase 1: Filter Section 14's decisions
+### Phase 1: Locate and read Section 14
 
-Read Section 14 of `full_report.md`. It contains:
+Do **not** read `full_report.md` in full — it is a concatenation of all cluster files and is large. Section 14 is the only input needed for extraction.
+
+First check whether `_analysis/synthesis.md` exists:
+
+```bash
+test -f _analysis/synthesis.md && echo "EXISTS" || echo "NOT_FOUND"
+```
+
+**If `synthesis.md` exists:** read `_analysis/synthesis.md` directly. It is the source of Section 14 and is much smaller than the assembled report. Skip the grep step.
+
+**If `synthesis.md` does not exist:** locate Section 14 in `full_report.md` without loading the whole file:
+
+```bash
+grep -n "SECTION 14" _analysis/full_report.md | head -1
+```
+
+Read `full_report.md` starting from the line number returned by grep to EOF. Do not read any content before that line.
+
+Section 14 contains:
 - **14A**: Classified decisions (tagged UNIVERSAL, ENGINEERING, or FRAMEWORK-SPECIFIC)
 - **14B**: Anti-patterns (missing, disabled, or broken implementations)
 - **14C**: Design trade-offs (decision frameworks with context-dependent options)

@@ -21,6 +21,7 @@ Each cluster has its own questions file in the skill directory (e.g. `questions_
 - Do NOT read the entire repository per cluster.
 - Read ONLY the assigned cluster questions file.
 - Read ONLY files relevant to the cluster questions.
+- **Index-driven lookup only** — when a section says "Find" or "Find and read", do not search the filesystem. Use the Key File Registry in `index.md` (already in context from Cluster A) to identify candidate files, then read only those. If a topic has no matching registry entry, write: `Not indexed — verify Phase 1 captured all relevant files.`
 
 ### Global Output Rules
 - Iventories: always use tables (tools, models, entities, tests)
@@ -97,50 +98,45 @@ Write file before proceeding to next.
 
 Use this template for each cluster:
 
-> Read `{CODEBASE_ROOT}/_analysis/index.md`.
 > Read `{CLUSTER_QUESTIONS_FILE}`.
-> Identify relevant files using index.
-> Read only relevant files.
+> Identify relevant files using the Key File Registry in index.md (already in context).
+> Read only those files.
 > Produce structured findings only.
 
-After each cluster completes, write output to: `{CODEBASE_ROOT}/_analysis/{OUTPUT_FILE}`. Then proceed to the next cluster.
+After each cluster completes, write output to: `{CODEBASE_ROOT}/_analysis/{OUTPUT_FILE}`. Then release: stop referencing this cluster's question file and the source files read for it — do not re-read them. Keep `_analysis/index.md` in context. Then proceed to the next cluster.
 
 ### Phase 3: Synthesis
 
 After all cluster files are written:
 
-1. Read:
-   - `{CODEBASE_ROOT}/_analysis/index.md`
-   - All cluster output files
+1. All cluster output files and `index.md` are already in context — do not re-read them from disk.
 2. Read `questions_synthesis.md`.
-4. Do not repeat findings from cluster files — reference them by section number.
-5. Write output to `{CODEBASE_ROOT}/_analysis/synthesis.md`
+3. Do not repeat findings from cluster files — reference them by section number.
+4. Write output to `{CODEBASE_ROOT}/_analysis/synthesis.md`
 
 ### Phase 4: Assemble
 
-Combine all output files into a single report at `{CODEBASE_ROOT}/_analysis/full_report.md`.
+Run this shell command to produce `{CODEBASE_ROOT}/_analysis/full_report.md` — do not read or rewrite the cluster files yourself:
 
-Concatenate in this order, with no modifications to content:
-1. cluster_a_core_architecture.md
-2. cluster_b_execution_state_memory.md
-3. cluster_c_tools_retrieval.md
-4. cluster_d_data_adaptation.md
-5. cluster_e_safety_security.md
-6. cluster_f_ops.md
-7. synthesis.md
-
-Prepend this header:
-
-```
-# Agent Codebase Analysis Report
-**Codebase**: {CODEBASE_ROOT}
-**Date**: {DATE}
+```bash
+{
+  printf "# Agent Codebase Analysis Report\n**Codebase**: {CODEBASE_ROOT}\n**Date**: {DATE}\n\n"
+  cat \
+    {CODEBASE_ROOT}/_analysis/cluster_a_core_architecture.md \
+    {CODEBASE_ROOT}/_analysis/cluster_b_execution_state_memory.md \
+    {CODEBASE_ROOT}/_analysis/cluster_c_tools_retrieval.md \
+    {CODEBASE_ROOT}/_analysis/cluster_d_data_adaptation.md \
+    {CODEBASE_ROOT}/_analysis/cluster_e_safety_security.md \
+    {CODEBASE_ROOT}/_analysis/cluster_f_ops.md \
+    {CODEBASE_ROOT}/_analysis/synthesis.md
+} > {CODEBASE_ROOT}/_analysis/full_report.md
 ```
 
 ### Error handling
 
 - If a cluster fails or times out, re-run only that cluster.
 - If the index file is missing when a cluster starts, fail immediately.
+- When re-running a single cluster in isolation after failure, read `index.md` before starting.
 - If output limit reached:
   - Stop at last fully completed section.
   - Append a note listing incomplete sections from the cluster questions file.
