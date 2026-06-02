@@ -147,6 +147,20 @@ prism promote <engram-id>      # promote a well-validated engram to a publishabl
 /audit-code               # audit code against known patterns
 ```
 
+### Public registry
+
+Prism ships with a public read-only registry (`prism-open-source`) pre-configured out of the box. It's automatically added during install and becomes active when you run `prism init` in a project.
+
+The registry contains skills extracted by Prism's own mining pipelines (`/run-analysis-pipeline`, `/run-history-pipeline`) from popular open-source repositories. You can query it immediately:
+
+```bash
+prism registry list           # confirm prism-open-source is configured
+/advise-skills                # query the registry for patterns relevant to your question
+/audit-code                   # surface registry skills that apply to the current codebase
+```
+
+It is read-only — you cannot publish to it. To share your own team's skills, [set up a private registry](DOCS.md).
+
 ## How it works
 
 Prism has two channels for getting knowledge into Claude Code or Cursor:

@@ -123,6 +123,24 @@ if [ ! -f "$PRISM_HOME/index.json" ]; then
     echo '{"engrams": []}' > "$PRISM_HOME/index.json"
 fi
 
+# 8b. Seed registries.json with the public registry if not yet configured (SETUP-05)
+if [ ! -f "$PRISM_HOME/registries.json" ]; then
+    cat > "$PRISM_HOME/registries.json" << 'EOF'
+{
+  "registries": [
+    {
+      "name": "prism-open-source",
+      "url": "https://prism-registry.prism-flume.workers.dev",
+      "token": "prism_8648b53b4c66e15bbd2966d0e60eda96b3517d3ad6fddd5485f5a5a40488f096",
+      "writable": false
+    }
+  ],
+  "default": "prism-open-source"
+}
+EOF
+    chmod 600 "$PRISM_HOME/registries.json"
+fi
+
 # 9. Create symlink (SETUP-02)
 # Symlinks to the installed copy so updates via install.sh are picked up
 ln -sf "$PRISM_HOME/prism" "$BIN_DIR/prism"
