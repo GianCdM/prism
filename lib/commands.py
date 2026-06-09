@@ -97,7 +97,7 @@ def cmd_init() -> None:
     # Print concise summary (D-06, D-11)
     print(f"\n\033[32mPrism initialized for {project_name} ({project_id})\033[0m")
     print()
-    print("  Hooks:   .claude/settings.local.json (Claude Code) + .cursor/settings.json (Cursor)")
+    print("  Hooks:   .claude/settings.local.json (Claude Code) + .cursor/hooks.json (Cursor)")
     print("  MCP:     prism knowledge server registered (Claude Code + Cursor)")
     print("  Context: .claude/prism.md + .cursor/rules/prism.mdc generated")
     if skills_count > 0:
@@ -166,21 +166,14 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
 def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
     """Configure Cursor project hooks and user-level MCP server.
 
-    Hooks → .cursor/settings.json (project-level).
+    Hooks → .cursor/hooks.json (project-level). Cursor reads hooks ONLY from
+    this file with a {"version": 1, "hooks": {...}} shape — it does NOT read
+    hooks from settings.json (that is the Claude Code convention).
     MCP server → ~/.cursor/mcp.json (mcpServers.prism).
     """
     cursor_dir = get_project_root() / ".cursor"
     cursor_dir.mkdir(parents=True, exist_ok=True)
 
-    settings_path = cursor_dir / "settings.json"
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    hooks = settings.get("hooks", {})
     capture_script = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
     pre_command = capture_hook_command(
         capture_script,
@@ -189,10 +182,30 @@ def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
         extra_env={"PRISM_SOURCE": "cursor"},
     )
 
-    # One observation per tool call (matches Claude Code PreToolUse-only).
-    post_entries = hooks.get("postToolUse", [])
+    hooks_path = cursor_dir / "hooks.json"
+    config = {}
+    if hooks_path.exists():
+        try:
+            config = json.loads(hooks_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            config = {}
+
+    config["version"] = 1
+    hooks = config.get("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+
+    # One observation per tool call → preToolUse only (mirrors Claude Code
+    # PreToolUse). Drop any stale prism entries before re-adding.
+    pre_entries = [
+        e for e in hooks.get("preToolUse", [])
+        if not (isinstance(e, dict) and capture_script in e.get("command", ""))
+    ]
+    pre_entries.append({"command": pre_command})
+    hooks["preToolUse"] = pre_entries
+
     post_entries = [
-        e for e in post_entries
+        e for e in hooks.get("postToolUse", [])
         if not (isinstance(e, dict) and capture_script in e.get("command", ""))
     ]
     if post_entries:
@@ -200,21 +213,12 @@ def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
     else:
         hooks.pop("postToolUse", None)
 
-    pre_entries = [
-        e for e in hooks.get("preToolUse", [])
-        if not (
-            isinstance(e, dict)
-            and (
-                capture_script in e.get("command", "")
-                or f"{capture_script} post" == e.get("command", "")
-            )
-        )
-    ]
-    pre_entries.append({"command": pre_command})
-    hooks["preToolUse"] = pre_entries
+    config["hooks"] = hooks
+    hooks_path.write_text(json.dumps(config, indent=2) + "\n")
 
-    settings["hooks"] = hooks
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    # Migration: earlier prism versions wrote hooks to settings.json, which
+    # Cursor never reads. Strip those dead prism entries so they don't linger.
+    _strip_legacy_cursor_settings_hooks(cursor_dir / "settings.json", capture_script)
 
     # Remove legacy prism.md from cursor rules (migrated to prism.mdc)
     legacy = cursor_dir / "rules" / "prism.md"
@@ -241,6 +245,95 @@ def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
     tmp = cursor_mcp_path.parent / (cursor_mcp_path.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.rename(str(tmp), str(cursor_mcp_path))
+
+
+def _strip_legacy_cursor_settings_hooks(settings_path: Path, capture_script: str) -> None:
+    """Remove dead prism hook entries from a legacy .cursor/settings.json.
+
+    Cursor never read hooks from settings.json; older prism installs wrote them
+    there anyway. Strip only prism's own entries; leave any user config intact.
+    Delete the file if it ends up empty.
+    """
+    if not settings_path.exists():
+        return
+    try:
+        settings = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    for event in ("preToolUse", "postToolUse"):
+        entries = [
+            e for e in hooks.get(event, [])
+            if not (isinstance(e, dict) and capture_script in e.get("command", ""))
+        ]
+        if entries:
+            hooks[event] = entries
+        else:
+            hooks.pop(event, None)
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+    try:
+        if settings:
+            settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+        else:
+            settings_path.unlink()
+    except OSError:
+        pass
+
+
+def _uninstall_cursor_integration() -> None:
+    """Remove prism's Cursor hooks and MCP entry. Mirrors the Claude Code cleanup."""
+    cursor_dir = get_project_root() / ".cursor"
+    capture_script = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
+
+    # Remove prism's preToolUse entry from .cursor/hooks.json.
+    hooks_path = cursor_dir / "hooks.json"
+    if hooks_path.exists():
+        try:
+            config = json.loads(hooks_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            config = None
+        if isinstance(config, dict):
+            hooks = config.get("hooks", {})
+            if isinstance(hooks, dict):
+                for event in ("preToolUse", "postToolUse"):
+                    entries = [
+                        e for e in hooks.get(event, [])
+                        if not (isinstance(e, dict) and capture_script in e.get("command", ""))
+                    ]
+                    if entries:
+                        hooks[event] = entries
+                    else:
+                        hooks.pop(event, None)
+                # If only the version sentinel remains, drop the file entirely.
+                if hooks:
+                    config["hooks"] = hooks
+                    hooks_path.write_text(json.dumps(config, indent=2) + "\n")
+                else:
+                    hooks_path.unlink()
+                print("  Removed hook from .cursor/hooks.json")
+
+    # Strip any dead entries a legacy install left in settings.json.
+    _strip_legacy_cursor_settings_hooks(cursor_dir / "settings.json", capture_script)
+
+    # Remove the prism MCP server from ~/.cursor/mcp.json.
+    cursor_mcp_path = Path.home() / ".cursor" / "mcp.json"
+    if cursor_mcp_path.exists():
+        try:
+            data = json.loads(cursor_mcp_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = None
+        if isinstance(data, dict):
+            servers = data.get("mcpServers", {})
+            if isinstance(servers, dict) and "prism" in servers:
+                servers.pop("prism")
+                data["mcpServers"] = servers
+                cursor_mcp_path.write_text(json.dumps(data, indent=2) + "\n")
+                print("  Removed prism MCP server from ~/.cursor/mcp.json")
 
 
 def _write_mcp_to_claude_json(project_id: str) -> None:
@@ -348,7 +441,7 @@ def _update_gitignore() -> None:
         ".claude/prism.md",
         ".claude/skills/",
         ".claude/.prism_project_id",
-        ".cursor/settings.json",
+        ".cursor/hooks.json",
         ".cursor/rules/*.mdc",
     ]
 
@@ -844,6 +937,7 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
     print(f"This will remove all Prism integration from {project_name} ({project_id}):")
     print(f"  Hook in .claude/settings.local.json")
     print(f"  MCP entry in ~/.claude.json")
+    print(f"  Hook in .cursor/hooks.json + MCP entry in ~/.cursor/mcp.json")
     print(f"  {prism_md}")
     print(f"  {project_id_cache}")
     print(f"  Prism skill symlinks in .claude/skills/")
@@ -889,6 +983,7 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
         print("  Removed hook from settings.local.json")
 
     _remove_mcp_from_claude_json()
+    _uninstall_cursor_integration()
 
     # Delete context file
     if prism_md.exists():
@@ -978,6 +1073,7 @@ def _remove_gitignore_entries() -> None:
         ".claude/prism.md",
         ".claude/skills/",
         ".claude/.prism_project_id",
+        ".cursor/hooks.json",
         ".cursor/settings.json",
         ".cursor/rules/*.mdc",
         "# Prism (auto-generated, machine-specific)",

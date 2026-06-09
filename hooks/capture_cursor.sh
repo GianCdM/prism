@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prism capture hook for Cursor
-# Registered as preToolUse-only hook in .cursor/settings.json (one obs per tool call)
+# Registered as preToolUse-only hook in .cursor/hooks.json (one obs per tool call)
 #
 # Receives JSON on stdin from Cursor Agent.
 # Pipes directly to a single Python process.

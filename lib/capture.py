@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Prism observation capture processor.
 
-Called by hooks/capture.sh via: python3 capture.py <phase>
-Reads JSON from stdin (Claude Code hook payload), scrubs/compresses/truncates
-summaries into SQLite, and checks trigger thresholds.
+Called by hooks/capture.sh (Claude Code) or hooks/capture_cursor.sh (Cursor)
+via: python3 capture.py <phase>
+Reads JSON from stdin (Claude Code / Cursor hook payload), scrubs/compresses/
+truncates summaries into SQLite, and checks trigger thresholds.
 
 CRITICAL: This runs on EVERY tool use. Keep it fast.
 CRITICAL: Never crash, never block. All exceptions swallowed.
@@ -23,7 +24,9 @@ def main() -> None:
     phase = sys.argv[1] if len(sys.argv) > 1 else "pre"
     prism_home = Path(os.environ.get("PRISM_HOME", os.path.expanduser("~/.prism")))
 
-    # Read stdin (Claude Code hook payload)
+    # Read stdin hook payload. Claude Code and Cursor both send snake_case JSON
+    # with the fields we read here (session_id, tool_name, tool_input), so no
+    # per-source field remapping is needed.
     raw = sys.stdin.read()
     if not raw.strip():
         return
@@ -33,16 +36,7 @@ def main() -> None:
     except (json.JSONDecodeError, ValueError):
         return
 
-    # Normalise payload: Cursor uses camelCase, Claude Code uses snake_case
     source = os.environ.get("PRISM_SOURCE", "claude_code")
-    if source == "cursor":
-        # Cursor hook payload field mapping
-        if "toolName" in data and "tool_name" not in data:
-            data["tool_name"] = data["toolName"]
-        if "composerId" in data and "session_id" not in data:
-            data["session_id"] = data["composerId"]
-        if "toolInput" in data and "tool_input" not in data:
-            data["tool_input"] = data["toolInput"]
 
     tool_name = data.get("tool_name", "")
     session_id = data.get("session_id", "")
@@ -50,6 +44,18 @@ def main() -> None:
 
     _ensure_prism_on_path(prism_home)
     from lib.project import detect_project_id
+
+    # Project id is normally baked into the hook env (PRISM_PROJECT_ID). If it is
+    # not, fall back to the workspace path Cursor sends in the payload (cwd, or
+    # workspace_roots[0]) so detection runs against the real project, not the
+    # hook process's cwd.
+    if not os.environ.get("PRISM_PROJECT_ID"):
+        cursor_cwd = data.get("cwd") or (data.get("workspace_roots") or [None])[0]
+        if isinstance(cursor_cwd, str) and os.path.isdir(cursor_cwd):
+            try:
+                os.chdir(cursor_cwd)
+            except OSError:
+                pass
 
     project_id = detect_project_id()
 
