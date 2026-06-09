@@ -45,6 +45,10 @@ _CORRECTION_RE = _re.compile(
 
 _USER_QUERY_RE = _re.compile(r"<user_query>\s*([\s\S]*?)\s*</user_query>", _re.IGNORECASE)
 
+# Absolute POSIX-style paths embedded in transcript content (tool inputs, etc.).
+# Used to recover a Cursor session's workspace root when no cwd field exists.
+_ABS_PATH_RE = _re.compile(r"/(?:[A-Za-z0-9_.\-]+/)*[A-Za-z0-9_.\-]+")
+
 
 def _unwrap_user_query(text: str) -> str:
     """Strip Cursor's <user_query>…</user_query> wrapper, if present."""
@@ -89,6 +93,44 @@ def _message_text(msg: dict) -> str:
     return "\n".join(parts).strip()
 
 
+def _infer_cursor_cwd(jsonl_path: Path, folder_name: str) -> str:
+    """Recover a Cursor session's workspace root from transcript content.
+
+    Cursor transcript lines carry no top-level ``cwd`` field, and the folder
+    name (``Users-me-Documents-green-ros-advisor``) is a lossy slug — hyphens
+    and dots in path components are indistinguishable from separators, so it
+    cannot be reversed by string substitution.
+
+    Instead we use the slug as a checksum: tool inputs in the transcript embed
+    absolute paths inside the workspace, so the real root is the ancestor of
+    some embedded path whose own ``cursor_project_slug`` equals ``folder_name``.
+    The slug is lossy (``/foo/bar`` and ``/foo-bar`` collide), so prefer a
+    candidate that still exists on disk; fall back to the first slug match for
+    workspaces that have since been deleted.
+    """
+    from .project import cursor_project_slug
+
+    checked: set[str] = set()
+    fallback = ""
+    try:
+        with open(jsonl_path) as f:
+            for line in f:
+                for match in _ABS_PATH_RE.finditer(line):
+                    cur = os.path.normpath(match.group(0))
+                    # Real workspace roots are never at filesystem depth 1; a
+                    # depth-1 match is a literal slug string echoed in content.
+                    while cur.count("/") >= 2 and cur not in checked:
+                        checked.add(cur)
+                        if cursor_project_slug(cur) == folder_name:
+                            if os.path.isdir(cur):
+                                return cur
+                            fallback = fallback or cur
+                        cur = os.path.dirname(cur)
+    except OSError:
+        pass
+    return fallback
+
+
 def _resolve_cursor_project(
     folder_name: str,
     jsonl_path: Path,
@@ -101,7 +143,9 @@ def _resolve_cursor_project(
     if pid:
         return pid, root
 
-    cwd = _extract_cwd(jsonl_path)
+    # Cursor transcripts have no cwd field; recover the real root from the
+    # absolute paths the transcript embeds, validated against the folder slug.
+    cwd = _extract_cwd(jsonl_path) or _infer_cursor_cwd(jsonl_path, folder_name)
     if cwd.startswith("/"):
         return resolve_project_id_from_cwd(cwd, cwd_cache), cwd
 
@@ -300,8 +344,8 @@ def list_cursor_sessions(
             if size == 0:
                 continue
 
-            pid, resolved_root = _resolve_cursor_project(folder.name, jsonl_file, cwd_cache)
-            cwd = _extract_cwd(jsonl_file) or resolved_root or folder.name
+            pid, resolved_cwd = _resolve_cursor_project(folder.name, jsonl_file, cwd_cache)
+            cwd = resolved_cwd or folder.name
 
             if project_filter and pid != project_filter:
                 continue

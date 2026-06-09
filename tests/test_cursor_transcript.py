@@ -18,6 +18,7 @@ if str(_REPO) not in sys.path:
 from lib.project import cursor_project_slug, lookup_cursor_project, register_cursor_project
 from lib.sessions import (
     _analyze_cursor_transcript,
+    _infer_cursor_cwd,
     _message_text,
     _unwrap_user_query,
     is_cursor_guidance,
@@ -28,6 +29,61 @@ class TestCursorProjectSlug(unittest.TestCase):
     def test_macos_documents_path(self):
         slug = cursor_project_slug("/Users/lara.baseggio/Documents/prism")
         self.assertEqual(slug, "Users-lara-baseggio-Documents-prism")
+
+
+class TestInferCursorCwd(unittest.TestCase):
+    """Cursor transcripts carry no cwd; the real workspace root is recovered
+    from absolute paths embedded in tool inputs, using the folder slug as a
+    checksum. Hyphens/dots in path components make the slug lossy, so the disk
+    check disambiguates collisions."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        # A workspace whose name contains hyphens — the case that breaks
+        # naive slug → path reconstruction.
+        self.workspace = Path(self.tmp.name) / "Documents" / "green-ros-advisor-v2"
+        self.workspace.mkdir(parents=True)
+        self.folder_name = cursor_project_slug(str(self.workspace))
+        self.transcript = Path(self.tmp.name) / "session.jsonl"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, *lines: dict) -> None:
+        self.transcript.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
+
+    def test_recovers_hyphenated_workspace_root(self):
+        edited = str(self.workspace / "src" / "app.py")
+        self._write({
+            "role": "assistant",
+            "message": {"content": [
+                {"type": "tool_use", "name": "Read", "input": {"file_path": edited}},
+            ]},
+        })
+        self.assertEqual(_infer_cursor_cwd(self.transcript, self.folder_name), str(self.workspace))
+
+    def test_prefers_existing_dir_over_slug_collision(self):
+        # A non-existent path that slugifies identically must lose to the real dir.
+        collision = "/Documents/green-ros-advisor-v2"  # different root, same-ish slug
+        real = str(self.workspace / "lib" / "x.py")
+        self._write({
+            "role": "user",
+            "message": {"content": [{"type": "text", "text": f"see {collision}/y and {real}"}]},
+        })
+        self.assertEqual(_infer_cursor_cwd(self.transcript, self.folder_name), str(self.workspace))
+
+    def test_rejects_depth_one_slug_artifact(self):
+        # The literal slug echoed as a /single-component path is not a root.
+        artifact = "/" + self.folder_name
+        self._write({
+            "role": "user",
+            "message": {"content": [{"type": "text", "text": f"folder is {artifact}"}]},
+        })
+        self.assertEqual(_infer_cursor_cwd(self.transcript, self.folder_name), "")
+
+    def test_no_match_returns_empty(self):
+        self._write({"role": "user", "message": {"content": [{"type": "text", "text": "hi"}]}})
+        self.assertEqual(_infer_cursor_cwd(self.transcript, self.folder_name), "")
 
 
 class TestCursorProjectLookup(unittest.TestCase):
