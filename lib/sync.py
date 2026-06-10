@@ -53,6 +53,23 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
     prompt_entries = _select_prompt_entries(all_entries)
     publish_ready = _find_publish_ready(all_entries)
 
+    # Log the surfacing event so `prism stats` can distinguish engrams *pushed* into
+    # context from engrams Claude actively *pulled* via MCP. This is logging only -- it
+    # records WHICH engrams were surfaced, and deliberately does NOT reinforce them
+    # (selection stays read-only on confidence, per confidence_plan.md principle #1).
+    # Never fatal.
+    try:
+        from .storage import insert_retrieval, SYNC_PUSH_TOOL
+        insert_retrieval(
+            project_id=project_id,
+            source="sync",
+            tool=SYNC_PUSH_TOOL,
+            query="",
+            engram_ids=[e["id"] for e in prompt_entries],
+        )
+    except Exception:
+        pass
+
     # Categorize selected entries
     corrections = [e for e in prompt_entries if e.get("kind") == "correction"]
     pinned = [e for e in prompt_entries if e.get("pinned") and e.get("kind") != "correction"]

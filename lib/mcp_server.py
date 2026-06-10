@@ -227,6 +227,25 @@ def _reinforce_batch(entry_ids: list) -> None:
         pass  # Never let reinforcement break MCP responses
 
 
+def _log_retrieval(tool: str, query: str, entry_ids: list, project_id) -> None:
+    """Record a retrieval event for `prism stats` analytics.
+
+    Query is scrubbed before it touches disk. Writes to SQLite only -- never prints
+    (MCP stdout is protocol-only) and never raises (must not break an MCP response).
+    """
+    try:
+        from lib.storage import insert_retrieval
+        insert_retrieval(
+            project_id=project_id or "global",
+            source=os.environ.get("PRISM_SOURCE", "claude_code"),
+            tool=tool,
+            query=scrub_text(query or ""),
+            engram_ids=entry_ids,
+        )
+    except Exception:
+        pass
+
+
 # --- MCP Protocol ---
 
 TOOLS = [
@@ -295,10 +314,11 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        ids = [r["id"] for r in results]
+        _log_retrieval("prism_search", arguments.get("query", ""), ids, project_id)
         if not results:
             return {"content": [{"type": "text", "text": "No matching entries found."}]}
-        if results:
-            _reinforce_batch([r["id"] for r in results])
+        _reinforce_batch(ids)
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
@@ -308,7 +328,9 @@ def _handle_tool_call(name, arguments):
     elif name == "prism_get":
         result = _get_entry_content(arguments["id"])
         if not result:
+            _log_retrieval("prism_get", arguments["id"], [], project_id)
             return {"content": [{"type": "text", "text": f"Entry '{arguments['id']}' not found."}], "isError": True}
+        _log_retrieval("prism_get", arguments["id"], [arguments["id"]], project_id)
         _reinforce_batch([arguments["id"]])
         return {"content": [{"type": "text", "text": result["content"]}]}
 
@@ -319,10 +341,12 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        ids = [r["id"] for r in results]
+        rel_query = arguments.get("file_path") or arguments.get("domain") or ""
+        _log_retrieval("prism_relevant", rel_query, ids, project_id)
         if not results:
             return {"content": [{"type": "text", "text": "No relevant entries for this context."}]}
-        if results:
-            _reinforce_batch([r["id"] for r in results])
+        _reinforce_batch(ids)
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"

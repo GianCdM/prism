@@ -18,6 +18,9 @@ from .storage import (
     delete_orphan_sessions,
     get_recent,
     get_insights,
+    retrieval_stats,
+    retrieved_engram_ids,
+    top_engrams,
 )
 from .index import (
     add_entry,
@@ -561,6 +564,122 @@ def cmd_status(project_id: Optional[str] = None) -> None:
                 print(f"  Full log: {errors_path}")
         except OSError:
             pass
+
+
+def _fmt_ago(ts: Optional[int]) -> str:
+    """Human 'time since' for a Unix timestamp (e.g. 'today', '3d ago')."""
+    if not ts:
+        return "never"
+    secs = max(0, int(time.time()) - int(ts))
+    days = secs // 86400
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "1d ago"
+    if days < 30:
+        return f"{days}d ago"
+    return f"{days // 30}mo ago"
+
+
+def cmd_stats(
+    project_id: Optional[str] = None,
+    days: int = 30,
+    json_output: bool = False,
+    limit: int = 10,
+) -> None:
+    """Show retrieval analytics: how often Claude/Cursor actually pull engrams via MCP.
+
+    Counts are derived from logged retrieval events (SQLite), not from engram fields,
+    so they reflect *active* retrieval -- distinct from engrams merely surfaced into
+    prism.md by sync.
+    """
+    if not project_id:
+        project_id = detect_project_id()
+    window = max(1, days) * 86400
+    now = int(time.time())
+    since = now - window
+
+    stats = retrieval_stats(project_id, window)
+    tops = top_engrams(project_id, since, limit=limit)
+    pulled_ids = retrieved_engram_ids(project_id, since)
+
+    # Active engrams that were never pulled in the window -> forget candidates.
+    entries = list_entries(project_id=project_id)
+    dead = [e for e in entries if e["id"] not in pulled_ids]
+
+    window_n = stats["window_retrievals"]
+    prior_n = stats["prior_retrievals"]
+    if prior_n:
+        trend_pct = round((window_n - prior_n) / prior_n * 100)
+    else:
+        trend_pct = None
+    total_searches = stats["total_searches"]
+    hit_rate = (stats["hit_searches"] / total_searches) if total_searches else None
+
+    if json_output:
+        payload = {
+            "project_id": project_id,
+            "window_days": days,
+            "retrievals": window_n,
+            "prior_retrievals": prior_n,
+            "trend_pct": trend_pct,
+            "hit_rate": round(hit_rate, 3) if hit_rate is not None else None,
+            "searches": total_searches,
+            "by_source": stats["by_source"],
+            "surfaced_pushes": stats["surfaced_pushes"],
+            "surfaced_engrams": stats["surfaced_engrams"],
+            "top": [
+                {"id": t["id"], "count": t["count"],
+                 "last": datetime.fromtimestamp(t["last_ts"], timezone.utc).date().isoformat()}
+                for t in tops
+            ],
+            "dead": [e["id"] for e in dead],
+            "active_engrams": len(entries),
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    project_name = detect_project_name()
+    print(f"\033[1mPrism -- retrieval insights: {project_name}\033[0m (last {days}d)")
+    print()
+
+    if window_n == 0 and stats["surfaced_pushes"] == 0:
+        print("  No retrievals recorded yet.")
+        print("  Engrams are pulled when Claude/Cursor call prism_search, prism_get,")
+        print("  or prism_relevant via MCP. Stats will populate as you code.")
+        return
+
+    trend = ""
+    if trend_pct is not None:
+        arrow = "\033[32m^\033[0m" if trend_pct >= 0 else "\033[31mv\033[0m"
+        trend = f"   {arrow} {abs(trend_pct)}% vs prior {days}d"
+    print(f"  Retrievals    {window_n}{trend}")
+    if hit_rate is not None:
+        print(f"  Hit rate      {round(hit_rate * 100)}%   "
+              f"({stats['hit_searches']}/{total_searches} searches returned an engram)")
+    if stats["by_source"]:
+        src = "  ".join(f"{k} {v}" for k, v in sorted(stats["by_source"].items()))
+        print(f"  Source        {src}")
+    print()
+
+    if tops:
+        print("  \033[1mMost retrieved\033[0m")
+        for t in tops:
+            print(f"    {t['count']:>3}x  {t['id'][:44]:<44} last: {_fmt_ago(t['last_ts'])}")
+        print()
+
+    # Honesty line: surfaced into context vs actually pulled.
+    if stats["surfaced_engrams"]:
+        print(f"  Surfaced into context {stats['surfaced_engrams']} engram-pushes "
+              f"vs {window_n} active pulls")
+        print()
+
+    if dead:
+        shown = ", ".join(e["id"] for e in dead[:8])
+        more = f" (+{len(dead) - 8} more)" if len(dead) > 8 else ""
+        print(f"  \033[33mNever pulled in {days}d\033[0m ({len(dead)}/{len(entries)}) "
+              f"-> review with 'prism forget':")
+        print(f"    {shown}{more}")
 
 
 def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
