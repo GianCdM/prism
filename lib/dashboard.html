@@ -315,7 +315,6 @@ function renderLedger() {
       <div>
         <div class="entry-name"><span class="nm">${esc(p.name)}</span><span class="count">${p.stats.count}</span></div>
         <div class="entry-path" title="${esc(p.root)}">${p.root ? esc(shortPath(p.root)) : '<span class="entry-id">'+esc(p.id)+'</span>'}</div>
-        <div class="entry-time">${p.last_seen ? 'last seen '+fmtDate(p.last_seen) : esc(p.id)}</div>
       </div>
     </div>`).join('');
 
@@ -418,7 +417,6 @@ function renderProject() {
       <span class="id-pill">id ${esc(p.id)}</span>
       &nbsp; <b>${s.count}</b> engram${s.count!==1?'s':''}${s.count?` · avg confidence <b>${s.avg_confidence.toFixed(2)}</b>`:''}
       ${s.candidates?` · <b>${s.candidates}</b> candidate${s.candidates!==1?'s':''} pending`:''}
-      ${p.last_seen?` · last seen <b>${fmtDate(p.last_seen)}</b>`:''}
     </div>
     ${p.remote?`<div class="stats" style="margin-top:4px">${esc(p.remote)}</div>`:''}`;
   renderEngramView(p.name, 'Project', sub, p.id, p.engrams);

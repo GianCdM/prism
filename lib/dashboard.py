@@ -201,8 +201,8 @@ def build_data() -> dict:
         else:
             by_project.setdefault(e["project_id"] or "unknown", []).append(e)
 
-    # Union of project ids: those with engrams + those with a project.json.
-    project_ids = set(by_project) | set(proj_meta)
+    # Only show projects that have at least one engram.
+    project_ids = set(by_project)
     projects = []
     for pid in project_ids:
         engrams = sorted(
