@@ -61,9 +61,9 @@ def main() -> None:
     p_disable.add_argument(
         "feature",
         choices=["hook"],
-        help="Feature to disable. 'hook' removes the background PreToolUse capture hook "
-             "from .claude/settings.local.json -- stops automatic observation capture and "
-             "the AI extraction/review calls it triggers. MCP, skills, and all CLI commands "
+        help="Feature to disable. 'hook' removes capture hooks from .claude/settings.local.json "
+             "and .cursor/hooks.json — stops automatic observation capture and the AI "
+             "extraction/review calls it triggers. MCP, skills, and all CLI commands "
              "remain fully functional.",
     )
 
@@ -72,7 +72,7 @@ def main() -> None:
     p_enable.add_argument(
         "feature",
         choices=["hook"],
-        help="Feature to enable. 'hook' re-adds the PreToolUse capture hook.",
+        help="Feature to enable. 'hook' re-adds capture hooks for Claude Code and Cursor.",
     )
 
     # reset

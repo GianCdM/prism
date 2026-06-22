@@ -329,12 +329,16 @@ def _strip_legacy_cursor_settings_hooks(settings_path: Path, capture_script: str
         pass
 
 
-def _uninstall_cursor_integration() -> None:
-    """Remove prism's Cursor hooks and MCP entry. Mirrors the Claude Code cleanup."""
+def _remove_cursor_capture_hook(*, report: bool = False) -> bool:
+    """Remove prism capture from .cursor/hooks.json (and legacy settings.json).
+
+    Does not touch MCP, skills, or other hook entries. Returns True if a prism
+    capture entry was removed from hooks.json.
+    """
     cursor_dir = get_project_root() / ".cursor"
     capture_script = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
+    removed = False
 
-    # Remove prism's preToolUse entry from .cursor/hooks.json.
     hooks_path = cursor_dir / "hooks.json"
     if hooks_path.exists():
         try:
@@ -345,25 +349,75 @@ def _uninstall_cursor_integration() -> None:
             hooks = config.get("hooks", {})
             if isinstance(hooks, dict):
                 for event in ("preToolUse", "postToolUse"):
+                    before = hooks.get(event, [])
                     entries = [
-                        e for e in hooks.get(event, [])
+                        e for e in before
                         if not (isinstance(e, dict) and capture_script in e.get("command", ""))
                     ]
+                    if len(entries) != len(before):
+                        removed = True
                     if entries:
                         hooks[event] = entries
                     else:
                         hooks.pop(event, None)
-                # If only the version sentinel remains, drop the file entirely.
-                if hooks:
-                    config["hooks"] = hooks
-                    hooks_path.write_text(json.dumps(config, indent=2) + "\n")
-                else:
-                    hooks_path.unlink()
-                print("  Removed hook from .cursor/hooks.json")
+                if removed:
+                    if hooks:
+                        config["hooks"] = hooks
+                        hooks_path.write_text(json.dumps(config, indent=2) + "\n")
+                    else:
+                        hooks_path.unlink()
+                    if report:
+                        print("  Removed preToolUse hook from .cursor/hooks.json")
 
-    # Strip any dead entries a legacy install left in settings.json.
     _strip_legacy_cursor_settings_hooks(cursor_dir / "settings.json", capture_script)
+    return removed
 
+
+def _remove_claude_capture_hook(*, report: bool = False) -> bool:
+    """Remove prism PreToolUse capture from .claude/settings.local.json.
+
+    Does not touch SessionStart (maintain), MCP, or other hooks. Returns True if
+    a prism capture entry was removed.
+    """
+    settings_path = get_project_root() / ".claude" / "settings.local.json"
+    if not settings_path.exists():
+        return False
+
+    try:
+        existing = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    hooks = existing.get("hooks", {})
+    pre = hooks.get("PreToolUse", [])
+    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
+
+    filtered = [
+        group for group in pre
+        if not any(capture_cmd in h.get("command", "") for h in group.get("hooks", []))
+    ]
+    if len(filtered) == len(pre):
+        return False
+
+    if filtered:
+        hooks["PreToolUse"] = filtered
+    else:
+        hooks.pop("PreToolUse", None)
+
+    if hooks:
+        existing["hooks"] = hooks
+    else:
+        existing.pop("hooks", None)
+
+    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
+    if report:
+        print("  Removed PreToolUse hook from .claude/settings.local.json")
+    return True
+
+
+def _uninstall_cursor_integration() -> None:
+    """Remove prism's Cursor hooks and MCP entry. Mirrors the Claude Code cleanup."""
+    _remove_cursor_capture_hook(report=True)
     # Remove the prism MCP server from ~/.cursor/mcp.json.
     cursor_mcp_path = Path.home() / ".cursor" / "mcp.json"
     if cursor_mcp_path.exists():
@@ -1020,51 +1074,21 @@ def cmd_maintain(quiet: bool = False) -> None:
 
 
 def cmd_disable_hook() -> None:
-    """Remove the Prism PreToolUse capture hook from .claude/settings.local.json.
+    """Remove Prism capture hooks from Claude Code and Cursor project config.
 
     Stops automatic background observation capture and the AI extraction/review
     calls it triggers. MCP server, skills, engrams, and all CLI commands remain
     fully functional. Users can still run 'prism analyze-sessions --extract'
     manually after a session to get the same learning at their own pace.
     """
-    settings_path = get_project_root() / ".claude" / "settings.local.json"
-    if not settings_path.exists():
-        print("No .claude/settings.local.json found -- hook was not installed for this project.")
+    claude_removed = _remove_claude_capture_hook(report=True)
+    cursor_removed = _remove_cursor_capture_hook(report=True)
+
+    if not claude_removed and not cursor_removed:
+        print("Prism capture hooks not found in this project -- nothing to remove.")
         return
 
-    try:
-        existing = json.loads(settings_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"Could not read settings.local.json: {e}")
-        return
-
-    hooks = existing.get("hooks", {})
-    pre = hooks.get("PreToolUse", [])
-    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
-
-    # Filter out any matcher group whose hooks list contains the prism capture command.
-    # Leave all other hooks (e.g. from GSD or other tools) untouched.
-    filtered = [
-        group for group in pre
-        if not any(capture_cmd in h.get("command", "") for h in group.get("hooks", []))
-    ]
-
-    if len(filtered) == len(pre):
-        print("Prism capture hook not found in .claude/settings.local.json -- nothing to remove.")
-        return
-
-    if filtered:
-        hooks["PreToolUse"] = filtered
-    else:
-        hooks.pop("PreToolUse", None)
-
-    if hooks:
-        existing["hooks"] = hooks
-    else:
-        existing.pop("hooks", None)
-
-    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
-    print("Prism capture hook disabled.")
+    print("Prism capture hooks disabled.")
     print()
     print("  MCP server, skills, and engrams are unchanged.")
     print("  To capture knowledge manually: prism analyze-sessions --extract")
@@ -1072,7 +1096,7 @@ def cmd_disable_hook() -> None:
 
 
 def cmd_enable_hook() -> None:
-    """Re-add the Prism PreToolUse capture hook to .claude/settings.local.json."""
+    """Re-add Prism capture hooks for Claude Code and Cursor (and refresh MCP config)."""
     project_id = detect_project_id()
     _setup_hooks_and_mcp(project_id)
     print("Prism capture hook enabled.")
