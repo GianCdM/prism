@@ -32,7 +32,7 @@ Your engrams are unaffected. The migration archives your old `.jsonl` files unde
 
 ## What it does
 
-**Personal learning** — Prism observes your sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
+**Personal learning** — Prism observes your sessions through hooks (`tool_start` observations only). When the extraction pipeline finds recurring patterns, it proposes engrams — living knowledge units whose confidence rises on **use events** (MCP retrieval, session-review overlap), validator output, or extraction merge, and decays without use.
 
 **Team knowledge** — Promote your best engrams into publishable skills, or run slash commands to mine your codebase and git history for architectural patterns. Publish them to a team registry so everyone benefits.
 
@@ -65,8 +65,8 @@ prism init
 ```
 
 **Check:** `prism init` wires both IDEs (unused integration is harmless). Verify the hook for the IDE you use:
-- **Claude Code:** `.claude/settings.local.json` has a `PreToolUse` hook → `~/.prism/hooks/capture.sh`
-- **Cursor:** `.cursor/hooks.json` has a `preToolUse` hook → `~/.prism/hooks/capture_cursor.sh`
+- **Claude Code:** `.claude/settings.local.json` has a `PreToolUse` hook → `capture.sh` (plus `SessionStart` → `prism maintain --quiet`)
+- **Cursor:** `.cursor/hooks.json` has a `preToolUse` hook → `capture_cursor.sh`
 
 ### 3. Teach a preference
 
@@ -76,7 +76,7 @@ Before waiting for automatic extraction, teach Prism something you know you alwa
 prism learn "always use conventional commits in this project"
 ```
 
-**Check:** Context file shows the preference — `.claude/prism.md` (Claude Code) or `.cursor/rules/prism.mdc` (Cursor). `prism status` lists it with confidence `0.90` — that's the manual-teach starting confidence.
+**Check:** Context file shows the preference — `.claude/prism.md` (Claude Code) or `.cursor/rules/prism.mdc` (Cursor). `prism status` lists it with confidence `0.8` — the manual-teach starting confidence.
 
 
 ### 4. Let Prism learn from your previous sessions
@@ -103,7 +103,7 @@ Corrections are more powerful than teaches — they replace a specific engram an
 ```bash
 prism status          # copy the ID of the entry you just created
 prism correct <id> "always use conventional commits, never squash merge"
-prism status          # old entry gone, new one at confidence 0.90
+prism status          # old entry gone, new one at confidence 0.8
 ```
 
 ### 6. Search a past session
@@ -146,6 +146,8 @@ prism log --extractions                  # extraction validation decisions
 prism log --rejected                     # rejected candidates with failing gate reasons
 prism extract [--backend claude|cursor]  # run extraction (backend auto-detected by default)
 prism analyze-sessions --last 10         # mine past Claude Code or Cursor sessions
+prism sync                               # regenerate context files from active engrams
+prism maintain                           # run confidence decay (Claude Code: also at session start)
 ```
 
 ## Team skills
@@ -153,7 +155,7 @@ prism analyze-sessions --last 10         # mine past Claude Code or Cursor sessi
 ```bash
 prism promote <engram-id>      # promote a well-validated engram to a publishable skill
 
-# Slash commands in Claude Code
+# Slash commands in Claude Code (Cursor: same skills as rules in .cursor/rules/)
 /run-analysis-pipeline    # full codebase analysis
 /run-history-pipeline     # git history to skills
 /extract-skills           # analysis reports to skills
@@ -165,9 +167,7 @@ prism promote <engram-id>      # promote a well-validated engram to a publishabl
 
 ### Public registry
 
-Prism ships with a public read-only registry (`prism-open-source`) pre-configured out of the box. It's automatically added during install and becomes active when you run `prism init` in a project.
-
-The registry contains skills extracted by Prism's own mining pipelines (`/run-analysis-pipeline`, `/run-history-pipeline`) from popular open-source repositories. You can query it immediately:
+Prism ships with a public read-only registry (`prism-open-source`) pre-configured at **install** (`~/.prism/registries.json`). No project setup required — query it after install:
 
 ```bash
 prism registry list           # confirm prism-open-source is configured
@@ -181,11 +181,11 @@ It is read-only — you cannot publish to it. To share your own team's skills, [
 
 Prism has two channels for getting knowledge into Claude Code or Cursor:
 
-**Push** — `.claude/prism.md` and `.cursor/rules/prism.md` are auto-generated with your highest-priority knowledge (corrections, pinned items, top preferences). Claude Code and Cursor read this at session start.
+**Push** — `.claude/prism.md` and `.cursor/rules/prism.mdc` are auto-generated with your highest-priority knowledge: pinned entries, corrections, then preferences (up to 10 entries by kind — not by confidence score). The IDE reads these at session start. Placement does **not** boost confidence.
 
-**Pull** — An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. Claude and Cursor queries these mid-session when they need specific knowledge.
+**Pull** — An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. The model queries these mid-session when it needs specific knowledge. MCP retrieval fires a daily-idempotent confidence boost on matched engrams.
 
-Engrams have a lifecycle: they start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically to keep things fresh.
+Engrams have a lifecycle: they start at a base confidence, strengthen on use events (MCP retrieval or session-review overlap for pushed knowledge), via validator output or extraction merge — **not** on each repeated hook observation — and decay exponentially toward a floor without use. Run `prism maintain` periodically — Claude Code runs this automatically at session start (once per day); Cursor users should run it manually. See [DOCS.md](DOCS.md#engram-lifecycle) for the full model.
 
 **Observation compression** — before any observation reaches the database, it goes through a compression pass that strips fillers, hedges, pleasantries, and articles from prose while leaving code blocks, file paths, URLs, commands, identifiers, version numbers, and dates completely unchanged. This reduces storage noise and keeps the context fed into the extraction pipeline tighter. All observations are stored at `intensity='lite'` by default. The compression logic is a modified version of [Cavemem](https://github.com/JuliusBrussee/cavemem)'s approach.
 
@@ -208,7 +208,7 @@ prism config                        # show all settings
 prism config extract_threshold 20   # change a setting
 ```
 
-Key settings: `extract_threshold` (observations before auto-extraction), `agent_backend` (`auto`, `claude`, or `cursor`), `mixed_backend_preference` (which CLI to prefer when pending observations are mixed), `cursor_models` (fast/strong model IDs for the `agent` CLI), `decay_rate_per_week`, `max_context_lines` (prism.md size), `registry_url` (team registry). Config lives at `~/.prism/config.json`.
+Key settings: `extract_threshold` (observations before auto-extraction), `agent_backend` (`auto`, `claude`, or `cursor`), `mixed_backend_preference` (which CLI to prefer when pending observations are mixed), `cursor_models` (fast/strong model IDs for the `agent` CLI), `reinforce_alpha` / `confidence_ceiling` (use-event boost), `decay_half_life_weeks` / `decay_grace_days` / `decay_floor` (idle decay), `max_context_lines` (context file size). Team registries live in `~/.prism/registries.json`. Effective defaults are merged at runtime from `lib/config.py` — a fresh `config.json` from `install.sh` may list only a subset. Full reference in [DOCS.md](DOCS.md#configuration-reference).
 
 ## Project structure
 
@@ -223,6 +223,8 @@ Key settings: `extract_threshold` (observations before auto-extraction), `agent_
   agents/              # AI agent prompts (extractor, validator, reviewer)
   skills/              # Slash commands
   schemas/             # Validation schemas
+  index.json           # Master engram index
+  registries.json      # Team registry configuration (seeded at install)
 ```
 
 ## See also

@@ -7,3 +7,10 @@ marketplace_plan.md
 *.pyc
 *.pyo
 marketplace_plan.md
+# Prism (auto-generated, machine-specific)
+.claude/settings.local.json
+.claude/prism.md
+.claude/skills/
+.claude/.prism_project_id
+.cursor/hooks.json
+.cursor/rules/*.mdc
