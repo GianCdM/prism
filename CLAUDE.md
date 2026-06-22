@@ -143,14 +143,14 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
 <!-- GSD:workflow-start source:GSD defaults -->
 ## GSD Workflow Enforcement
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+Use a GSD command for **complex tasks** — multi-step work, anything spanning several files, or changes that benefit from planning artifacts and execution context staying in sync.
 
 Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
 - `/gsd-debug` for investigation and bug fixing
 - `/gsd-execute-phase` for planned phase work
+- `/gsd-quick` for smaller scoped tasks that still warrant a tracked workflow
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+**Simple tasks** — one-line edits, small fixes, doc tweaks, and ad-hoc changes — can be executed directly without a GSD workflow.
 <!-- GSD:workflow-end -->
 
 <!-- GSD:profile-start -->

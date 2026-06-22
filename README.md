@@ -49,6 +49,8 @@ git clone https://github.com/ProsusAI/prism.git && cd prism
 
 Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code) or [Cursor](https://cursor.com). The installer creates `~/.prism/` and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
 
+> **The `claude` CLI is required even if you only use Cursor.** Prism turns observations into knowledge by calling the `claude` CLI (Haiku proposes, Sonnet validates) — there is no Cursor-native extraction path. Without it, Prism still captures observations but will never generate engrams. Make sure `claude` is installed and logged in (`claude --version`).
+
 **Check:** `prism --help` prints usage. If you get "command not found", add `~/.local/bin` to your PATH — the installer will have warned you if it's missing.
 
 ### 2. Initialize in an active project

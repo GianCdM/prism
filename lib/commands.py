@@ -111,6 +111,16 @@ def cmd_init() -> None:
     print("Start coding -- observations accumulate automatically.")
     print("Run \033[1mprism extract\033[0m after ~15 observations to generate engrams.")
 
+    # Preflight: extraction/review shell out to the `claude` CLI (Haiku proposes,
+    # Sonnet validates). Capture works without it, but no engrams will ever be
+    # produced — warn loudly here rather than failing silently in the background.
+    if not shutil.which("claude"):
+        print()
+        print("\033[33mWARNING: the `claude` CLI was not found on your PATH.\033[0m")
+        print("  Prism uses it to turn observations into engrams (extraction + review).")
+        print("  Observations will still be captured, but \033[1mno engrams will be generated\033[0m")
+        print("  until `claude` is installed and authenticated. Install: https://claude.com/claude-code")
+
 
 def _setup_hooks_and_mcp(project_id: str) -> None:
     """Configure Claude Code hooks and MCP server.

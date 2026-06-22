@@ -61,6 +61,21 @@ def _try_acquire_pending(project_id: str) -> bool:
         return False
 
 
+def _log_trigger(msg: str) -> None:
+    """Append a one-line note to extraction.log. Never raises.
+
+    The trigger path is otherwise silent on failure (capture.py swallows all
+    exceptions, and only a successfully-spawned child writes to the log), which
+    made a non-firing auto-extract impossible to diagnose. Any bail-out reason
+    is recorded here so the failure mode is always observable.
+    """
+    try:
+        with open(PRISM_HOME / "extraction.log", "a") as f:
+            f.write(f"[trigger {int(time.time())}] {msg}\n")
+    except OSError:
+        pass
+
+
 def request_auto_extraction(
     project_id: str,
     *,
@@ -88,6 +103,10 @@ def request_auto_extraction(
     prism_cli = _find_prism_cli()
     if not prism_cli:
         clear_extract_pending(project_id)
+        _log_trigger(
+            f"{project_id}: prism CLI not found (PATH={os.environ.get('PATH', '')!r}); "
+            "auto-extract skipped"
+        )
         return False
 
     log_path = PRISM_HOME / "extraction.log"
@@ -99,8 +118,9 @@ def request_auto_extraction(
                 stderr=log_file,
                 start_new_session=True,
             )
-    except OSError:
+    except OSError as e:
         clear_extract_pending(project_id)
+        _log_trigger(f"{project_id}: spawn failed ({e}); cli={prism_cli!r}")
         return False
 
     if not quiet:
@@ -118,13 +138,22 @@ def maybe_trigger_extraction(project_id: str, quiet: bool = False) -> bool:
 
 
 def _find_prism_cli() -> str:
-    """Resolve path to the prism CLI script."""
+    """Resolve path to the prism CLI script.
+
+    Deterministic locations come FIRST, ``shutil.which`` last: GUI-launched hooks
+    (e.g. Cursor) inherit a stripped PATH without ``~/.local/bin``, so ``which``
+    returns None there and the background spawn would silently never fire. The
+    install always writes ``$PRISM_HOME/prism`` (install.sh), so anchor to that.
+    All candidates are Python scripts, safe to run as ``[sys.executable, cli]``.
+    """
+    candidates = [
+        PRISM_HOME / "prism",                     # canonical install location
+        Path(__file__).parent.parent / "prism",   # dev/repo checkout
+        Path.home() / ".local" / "bin" / "prism",  # symlink install target
+    ]
+    for cli in candidates:
+        if cli.exists():
+            return str(cli)
+
     on_path = shutil.which("prism")
-    if on_path:
-        return on_path
-
-    repo_cli = Path(__file__).parent.parent / "prism"
-    if repo_cli.exists():
-        return str(repo_cli)
-
-    return ""
+    return on_path or ""

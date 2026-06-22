@@ -231,7 +231,9 @@ No output text. Write files only.
                 cwd=str(PRISM_HOME),
             )
             if result.returncode != 0:
-                msg = result.stderr[:500]
+                # claude emits some failures (e.g. "Not logged in") on stdout, not
+                # stderr — fall back to stdout so the reason is never blank.
+                msg = (result.stderr.strip() or result.stdout.strip() or "(no output)")[:500]
                 print(f"Extraction failed: {msg}")
                 _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
                 _clear_batch_ids(project_id)
@@ -317,7 +319,7 @@ Exactly {n_candidates} elements — one per candidate, no omissions.
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
-            msg = result.stderr[:500]
+            msg = (result.stderr.strip() or result.stdout.strip() or "(no output)")[:500]
             print(f"Validation failed: {msg}")
             _log_extract_error(stage="sonnet_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
             return {"approved": 0, "rejected": 0, "modified": 0}
