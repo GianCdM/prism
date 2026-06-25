@@ -1,11 +1,7 @@
 # Changelog
 
 All notable changes to **Prism** are documented in this file.
-
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This project does not yet publish semantic version tags, so entries are grouped
-by merge date and pull request. Only changes that affect how Prism is used —
-new capabilities and significant fixes — are listed.
 
 ## [2026-06-22] — Confidence scoring (#12)
 
