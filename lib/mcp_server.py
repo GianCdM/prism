@@ -30,6 +30,7 @@ from lib.index import (
     reinforce_entries,
     save_index,
 )
+from lib.search import search_engrams
 
 SERVER_NAME = "prism"
 SERVER_VERSION = "0.1.0"
@@ -38,50 +39,18 @@ PROTOCOL_VERSION = "2025-03-26"
 
 # --- Search ---
 
-def _tokenize(text):
-    """Split text into lowercase tokens for Jaccard similarity."""
-    if not text:
-        return set()
-    return set(t for t in re.split(r"[\s\-_/.,;:!?()\"']+", text.lower()) if t)
-
-
 def _search(query, project_id=None, limit=5):
-    """Token Jaccard search across all entries."""
+    """Token Jaccard search across all entries. Delegates to shared search module."""
     index = load_index()
-    query_tokens = _tokenize(query)
-    if not query_tokens:
-        return []
-
-    error_terms = {"error", "fail", "crash", "exception", "oom", "bug", "broken", "issue"}
-    is_error_query = bool(query_tokens & error_terms)
-
-    scored = []
-    for entry in index.get("engrams", []):
-        # Skip if project-scoped and wrong project
-        if project_id and entry.get("scope") == "project":
-            if entry.get("project_id") not in (project_id, "global"):
-                continue
-
-        entry_tokens = _tokenize(entry.get("trigger", ""))
-        entry_tokens |= set(t.lower() for t in entry.get("tags", []))
-        entry_tokens |= _tokenize(entry.get("domain", ""))
-
-        overlap = query_tokens & entry_tokens
-        union = query_tokens | entry_tokens
-        score = len(overlap) / len(union) if union else 0
-
-        # Boost error_recipes for error-related queries
-        if is_error_query and entry.get("kind") == "error_recipe":
-            score *= 1.3
-
-        # Boost higher-confidence entries slightly
-        score += entry.get("confidence", 0) * 0.05
-
-        if score > 0.05:
-            scored.append((score, entry))
-
-    scored.sort(key=lambda x: (-x[0], -x[1].get("confidence", 0)))
-    return [{"score": round(s, 3), **e} for s, e in scored[:limit]]
+    return search_engrams(
+        query,
+        index.get("engrams", []),
+        project_id=project_id,
+        limit=limit,
+        min_overlap=1,
+        min_score=0.05,
+        min_token_len=1,
+    )
 
 
 def _get_entry_content(entry_id):

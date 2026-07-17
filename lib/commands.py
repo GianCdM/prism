@@ -208,7 +208,7 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     # the Claude Code equivalent of Cursor's alwaysApply: true: knowledge
     # reaches the model without the model needing to remember to search.
     retrieve_script = str(PRISM_HOME / "hooks" / "retrieve.sh")
-    retrieve_cmd = f"env PRISM_HOME={PRISM_HOME} {retrieve_script}"
+    retrieve_cmd = f"env PRISM_HOME={PRISM_HOME} PRISM_PROJECT_ID={project_id} {retrieve_script}"
     existing_retrieve_cmds = {
         h.get("command", "")
         for g in hooks.get("UserPromptSubmit", [])
