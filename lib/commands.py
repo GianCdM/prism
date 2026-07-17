@@ -201,6 +201,23 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     if maintain_cmd not in existing_session_cmds:
         hooks.setdefault("SessionStart", []).append(session_start_entry)
 
+    # UserPromptSubmit: proactively search the FULL engram base for knowledge
+    # relevant to the user's prompt. The push layer (prism.md) only carries the
+    # top ~10 engrams by confidence; this surfaces the REST — the dormant pull
+    # layer — automatically, by relevance to what the user is asking. This is
+    # the Claude Code equivalent of Cursor's alwaysApply: true: knowledge
+    # reaches the model without the model needing to remember to search.
+    retrieve_script = str(PRISM_HOME / "hooks" / "retrieve.sh")
+    retrieve_cmd = f"env PRISM_HOME={PRISM_HOME} {retrieve_script}"
+    existing_retrieve_cmds = {
+        h.get("command", "")
+        for g in hooks.get("UserPromptSubmit", [])
+        for h in g.get("hooks", [])
+    }
+    if retrieve_cmd not in existing_retrieve_cmds:
+        retrieve_entry = {"hooks": [{"type": "command", "command": retrieve_cmd}]}
+        hooks.setdefault("UserPromptSubmit", []).append(retrieve_entry)
+
     local["hooks"] = hooks
     local_path.write_text(json.dumps(local, indent=2) + "\n")
 
