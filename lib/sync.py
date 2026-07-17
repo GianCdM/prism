@@ -183,6 +183,13 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
     claude_path.write_text(content)
     print(f"Generated {claude_path} ({len(lines)} lines, {len(prompt_entries)} pushed, {mcp_only_count} via MCP)")
 
+    # Claude Code does NOT auto-load .claude/prism.md — only CLAUDE.md and
+    # .claude/rules/*.md are on the auto-load path. Without an @import directive
+    # in CLAUDE.md, prism.md sits on disk but never reaches the model's context.
+    # Cursor has alwaysApply: true in .mdc frontmatter for this; Claude Code
+    # needs the explicit @import to get equivalent "always loaded" semantics.
+    _ensure_claude_md_imports_prism(root)
+
     # Write to Cursor path (.mdc with alwaysApply frontmatter)
     cursor_rules_dir = root / ".cursor" / "rules"
     cursor_rules_dir.mkdir(parents=True, exist_ok=True)
@@ -198,6 +205,31 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
 
 # Backward-compat alias
 sync_claude_code = sync_context
+
+
+def _ensure_claude_md_imports_prism(root: Path) -> None:
+    """Ensure project CLAUDE.md imports .claude/prism.md so Claude Code loads it.
+
+    Claude Code only auto-loads CLAUDE.md and .claude/rules/*.md. Files in
+    .claude/ without an @import directive in CLAUDE.md are invisible to the
+    model. This is the Claude Code equivalent of Cursor's alwaysApply: true
+    in .mdc frontmatter.
+
+    Idempotent — skips if @import is already present.
+    """
+    claude_md = root / "CLAUDE.md"
+    import_line = "@.claude/prism.md"
+
+    if claude_md.exists():
+        existing = claude_md.read_text()
+        if import_line in existing:
+            return  # already present
+        content = existing.rstrip() + "\n\n<!-- Prism learned knowledge — auto-generated, always loaded: -->\n" + import_line + "\n"
+    else:
+        content = import_line + "\n"
+
+    claude_md.write_text(content)
+    print(f"Ensured {claude_md} imports prism.md")
 
 
 def _select_prompt_entries(entries: list, max_items: int = 10) -> list:
